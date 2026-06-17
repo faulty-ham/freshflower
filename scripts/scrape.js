@@ -1,8 +1,8 @@
-// scrape.js — Multi-dispensary flower tracker
+// scrape.js — FreshFlower multi-dispensary tracker
 // Saves ALL brands. Alerts only for favorited products that restock.
 //
 // Sources:
-//   • Cake House Hemet    → iHeartJane REST API  (store 6172)
+//   • Cake House Hemet    → Weedmaps public API
 //   • Harborside San Jose → Dutchie Plus GraphQL API
 
 import { createClient } from "@supabase/supabase-js";
@@ -42,86 +42,77 @@ function parseWeightGrams(option = "") {
   return null;
 }
 
-// ── ① iHeartJane — Cake House ─────────────────────────────────────────────────
+// ── ① Weedmaps — Cake House Hemet ─────────────────────────────────────────────
 
-async function fetchJanePage(storeId, page) {
-  const url = new URL(`https://api.iheartjane.com/v1/stores/${storeId}/search/products`);
-  url.searchParams.set("category", "flower");
-  url.searchParams.set("page", page);
-  url.searchParams.set("per_page", "96");
-  url.searchParams.set("sort", "popular");
+const WEEDMAPS_SLUG = "the-cake-house-hemet";
 
-  const res = await fetch(url.toString(), {
-    headers: {
-      "Accept":  "application/json",
-      "Origin":  "https://cakehousecannabis.com",
-      "Referer": "https://cakehousecannabis.com/",
-    },
-  });
-  if (!res.ok) throw new Error(`Jane API ${res.status}: ${(await res.text()).slice(0, 200)}`);
-  return res.json();
-}
-
-async function scrapeJane(storeId, sourceKey) {
-  console.log(`\n[Jane] Fetching store ${storeId}…`);
-  const raw = [];
-  let page = 1;
+async function scrapeWeedmaps(slug, sourceKey) {
+  console.log(`\n[Weedmaps] Fetching "${slug}"…`);
+  const products = [];
+  let offset = 0;
+  const limit = 100;
 
   while (true) {
-    const data = await fetchJanePage(storeId, page);
-    const items = data?.data ?? data?.products ?? data?.hits ?? [];
+    const url = `https://api-g.weedmaps.com/wm/v2/listings/${slug}/menu_items` +
+      `?include_unpublished=false&sort_by=name&sort_dir=asc` +
+      `&category_filter=flower&size=${limit}&offset=${offset}`;
+
+    const res = await fetch(url, {
+      headers: {
+        "Accept":     "application/json",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+        "Origin":     "https://weedmaps.com",
+        "Referer":    "https://weedmaps.com/",
+      },
+    });
+    if (!res.ok) throw new Error(`Weedmaps API ${res.status}: ${(await res.text()).slice(0, 300)}`);
+    const json = await res.json();
+
+    const items = json?.data?.menu_items ?? [];
     if (!items.length) break;
-    raw.push(...items);
-    const total = data?.meta?.total ?? data?.total ?? null;
-    if ((total !== null && raw.length >= total) || items.length < 96) break;
-    page++;
+    products.push(...items);
+
+    const total = json?.meta?.total_count ?? json?.data?.total_count ?? null;
+    console.log(`[Weedmaps] offset ${offset}: ${items.length} items (${products.length}${total ? "/" + total : ""} total)`);
+    if (total !== null && products.length >= total) break;
+    if (items.length < limit) break;
+    offset += limit;
     await sleep(500);
   }
 
-  console.log(`[Jane] ${raw.length} flower products`);
+  console.log(`[Weedmaps] ${products.length} flower products`);
 
-  return raw.flatMap(p => {
-    const variants = Array.isArray(p.prices) && p.prices.length
-      ? p.prices
-      : [{ option: null, price: p.price }];
+  return products.flatMap(p => {
+    const variants = Array.isArray(p.variants) && p.variants.length
+      ? p.variants
+      : [{ price: p.price, option: null }];
 
     return variants.map(v => {
-      const option    = v.weight ?? v.option ?? v.label ?? null;
-      const weightG   = parseWeightGrams(String(option ?? ""));
-      const priceDollars = (v.price ?? v.priceRec) != null
-        ? (v.price ?? v.priceRec) / 100
-        : null;
-
+      const option  = v.option ?? v.size ?? null;
+      const weightG = parseWeightGrams(String(option ?? ""));
       return {
         source:          sourceKey,
-        jane_product_id: `${p.id ?? p.product_id}-${option ?? "default"}`,
-        product_base_id: String(p.id ?? p.product_id ?? ""),
-        brand:           p.brand ?? p.brand_name ?? "",
-        strain:          p.name ?? p.product_name ?? "",
-        lineage:         p.kind ?? p.lineage ?? "",
+        jane_product_id: `wm-${p.id}-${option ?? "default"}`,
+        product_base_id: `wm-${p.id}`,
+        brand:           p.brand?.name ?? p.brand_name ?? "",
+        strain:          p.name ?? "",
+        lineage:         p.strain_classification ?? p.category ?? "",
         weight_grams:    weightG,
         weight_label:    option,
-        price:           priceDollars,
-        thc_pct:         p.percent_thc ?? null,
-        cbd_pct:         p.percent_cbd ?? null,
-        product_url:     buildJaneUrl(storeId, p),
-        image_url:       p.image ?? p.photo ?? null,
+        price:           v.price != null ? parseFloat(v.price) : null,
+        thc_pct:         p.percent_thc ? parseFloat(p.percent_thc) : null,
+        cbd_pct:         p.percent_cbd ? parseFloat(p.percent_cbd) : null,
+        product_url:     `https://weedmaps.com/dispensaries/${slug}/menu/${p.slug ?? p.id}`,
+        image_url:       p.photos?.[0]?.original_url ?? p.avatar_image?.original_url ?? null,
       };
     });
   });
 }
 
-function buildJaneUrl(storeId, p) {
-  const slug = p.slug ?? p.product_slug ?? "";
-  return slug
-    ? `https://cakehousecannabis.com/order-weed/products/${p.id}/${slug}`
-    : `https://cakehousecannabis.com/order-weed/products/${p.id ?? ""}`;
-}
-
 // ── ② Dutchie Plus GraphQL — Harborside SJ ────────────────────────────────────
 
-const DUTCHIE_GQL      = "https://plus.dutchie.com/plus/2021-07/graphql";
-const HARBORSIDE_SLUG  = "san-jose-10th-street";
+const DUTCHIE_GQL     = "https://plus.dutchie.com/plus/2021-07/graphql";
+const HARBORSIDE_SLUG = "san-jose-10th-street";
 
 const RETAILER_QUERY = `
   query Retailer($slug: String!) {
@@ -232,7 +223,6 @@ async function upsertProduct(p) {
       image_url:       p.image_url,
       is_available:    true,
       last_seen_at:    new Date().toISOString(),
-      // first_seen_at is set by DB default on INSERT; upsert won't overwrite it
     }, { onConflict: "jane_product_id", ignoreDuplicates: false });
   if (error) console.error("  upsert error:", error.message);
 }
@@ -249,7 +239,6 @@ async function logAvailability(janeProductId, isAvailable, price) {
   if (error) console.error("  log error:", error.message);
 }
 
-// Returns products that are brand-new OR were previously unavailable (restocks)
 async function findRestockedAndNew(products) {
   if (!products.length) return [];
   const ids = products.map(p => p.jane_product_id);
@@ -302,17 +291,14 @@ async function sendAlert(restockedProducts) {
     return;
   }
 
-  // Load which products are favorited with alerts on
   const favProducts = await loadFavoritedProducts();
   if (!favProducts.length) {
     console.log("  (no favorited products with alerts — skipping email)");
     return;
   }
 
-  const favBaseIds = new Set(favProducts.map(f => f.product_base_id).filter(Boolean));
-
-  // Filter restocked to only favorited ones
-  const alertItems = restockedProducts.filter(p => favBaseIds.has(p.product_base_id));
+  const favBaseIds  = new Set(favProducts.map(f => f.product_base_id).filter(Boolean));
+  const alertItems  = restockedProducts.filter(p => favBaseIds.has(p.product_base_id));
   if (!alertItems.length) {
     console.log("  No favorited products restocked — no email sent.");
     return;
@@ -327,24 +313,24 @@ async function sendAlert(restockedProducts) {
 
   const storeLabel = { "cakehouse": "Cake House", "harborside-sj": "Harborside SJ" };
 
-  let html = `<h2>🌿 Favorited Products Back In Stock</h2>
+  let html = `<h2>🌿 FreshFlower — Favorited Products Back In Stock</h2>
 <p>The following products you favorited are now available:</p><ul>`;
 
   for (const p of alertItems) {
-    const store  = storeLabel[p.source] ?? p.source;
-    const wt     = p.weight_label ? ` — ${p.weight_label}` : "";
-    const price  = p.price != null ? ` — $${p.price.toFixed(2)}` : "";
+    const store = storeLabel[p.source] ?? p.source;
+    const wt    = p.weight_label ? ` — ${p.weight_label}` : "";
+    const price = p.price != null ? ` — $${p.price.toFixed(2)}` : "";
     html += `<li><strong>${p.brand}</strong> — ${p.strain} (${p.lineage || "??"})${wt}${price} — ${store}`;
     if (p.product_url) html += ` — <a href="${p.product_url}">View</a>`;
     html += `</li>`;
   }
 
-  html += `</ul><p><small>Manage alerts in your <a href="https://faulty-ham.github.io/flower-tracker/">Flower Tracker dashboard</a>.</small></p>`;
+  html += `</ul><p><small>Manage alerts in your <a href="https://faulty-ham.github.io/freshflower/">FreshFlower dashboard</a>.</small></p>`;
 
   await transporter.sendMail({
-    from:    `"Flower Tracker" <${SMTP_USER}>`,
+    from:    `"FreshFlower" <${SMTP_USER}>`,
     to:      ALERT_TO,
-    subject: `🌿 ${alertItems.length} favorited product${alertItems.length !== 1 ? "s" : ""} back in stock`,
+    subject: `🌿 ${alertItems.length} favorited product${alertItems.length !== 1 ? "s" : ""} back in stock — FreshFlower`,
     html,
   });
   console.log(`  📧 Alert sent: ${alertItems.length} favorited product(s) restocked`);
@@ -353,10 +339,10 @@ async function sendAlert(restockedProducts) {
 // ── Main ───────────────────────────────────────────────────────────────────────
 
 async function main() {
-  console.log(`\n🌿 Flower scrape — ${new Date().toISOString()}`);
+  console.log(`\n🌿 FreshFlower scrape — ${new Date().toISOString()}`);
 
-  const [janeProducts, dutchieProducts] = await Promise.all([
-    scrapeJane(6172, "cakehouse"),
+  const [wmProducts, dutchieProducts] = await Promise.all([
+    scrapeWeedmaps(WEEDMAPS_SLUG, "cakehouse"),
     scrapeDutchie(
       HARBORSIDE_SLUG,
       "harborside-sj",
@@ -364,10 +350,9 @@ async function main() {
     ),
   ]);
 
-  const all = [...janeProducts, ...dutchieProducts];
+  const all = [...wmProducts, ...dutchieProducts];
   console.log(`\n  ${all.length} total variants across both stores`);
 
-  // Find new arrivals and restocks before upserting
   const restockedAndNew = await findRestockedAndNew(all);
   if (restockedAndNew.length) {
     console.log(`  🆕 ${restockedAndNew.length} new/restocked variants`);
@@ -375,17 +360,13 @@ async function main() {
     console.log("  No new or restocked products this run.");
   }
 
-  // Upsert everything + log availability
   const seenIds = new Set(all.map(p => p.jane_product_id));
   for (const p of all) {
     await upsertProduct(p);
     await logAvailability(p.jane_product_id, true, p.price);
   }
 
-  // Mark gone products
   await markMissing(seenIds);
-
-  // Alert only for favorited products that restocked
   await sendAlert(restockedAndNew);
 
   console.log("\n✅ Done.\n");
