@@ -67,17 +67,23 @@ async function scrapeJane(storeId, sourceKey) {
     }
   });
 
-  // Load the flower page — Jane will make its own API calls as it renders
+// Load the flower page and wait for it to render
   await page.goto(`https://cakehousecannabis.com/order-weed/flower`, {
-    waitUntil: "networkidle",
+    waitUntil: "domcontentloaded",
     timeout: 60000,
   });
 
+  // Give Jane time to fire its initial API calls
+  await sleep(5000);
+
   // Scroll down to trigger lazy loading of more products
-  for (let i = 0; i < 8; i++) {
+  for (let i = 0; i < 10; i++) {
     await page.evaluate(() => window.scrollBy(0, 1200));
-    await sleep(1500);
+    await sleep(2000);
   }
+
+  // Final wait to catch any trailing requests
+  await sleep(3000);
 
   await browser.close();
 
