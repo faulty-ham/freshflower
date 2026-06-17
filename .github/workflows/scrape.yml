@@ -8,9 +8,9 @@ on:
 
 jobs:
   scrape:
-    name: Scrape Cake House Flower
+    name: Scrape Cake House + Harborside Flower
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
 
     steps:
       - name: Checkout
@@ -24,6 +24,10 @@ jobs:
       - name: Install dependencies
         working-directory: scripts
         run: npm install
+
+      - name: Install Playwright browsers
+        working-directory: scripts
+        run: npx playwright install chromium --with-deps
 
       - name: Run scraper
         working-directory: scripts

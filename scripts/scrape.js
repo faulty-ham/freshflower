@@ -2,16 +2,16 @@
 // Saves ALL brands. Alerts only for favorited products that restock.
 //
 // Sources:
-//   • Cake House Hemet    → Weedmaps public API
+//   • Cake House San Jose → iHeartJane via Playwright (bypasses Cloudflare)
 //   • Harborside San Jose → Dutchie Plus GraphQL API
 
 import { createClient } from "@supabase/supabase-js";
 import nodemailer from "nodemailer";
+import { chromium } from "playwright";
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY;
-
-const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+const supabase    = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -20,10 +20,8 @@ function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 function parseWeightGrams(option = "") {
   if (!option) return null;
   const s = option.toLowerCase().trim();
-
   const gMatch = s.match(/^([\d.]+)\s*g(?:ram)?s?$/);
   if (gMatch) return parseFloat(gMatch[1]);
-
   const wordOz = {
     "half oz": 14, "half ounce": 14,
     "quarter oz": 7, "quarter ounce": 7,
@@ -35,75 +33,90 @@ function parseWeightGrams(option = "") {
   for (const [k, v] of Object.entries(wordOz)) {
     if (s === k || s.startsWith(k)) return v;
   }
-
   const ozMatch = s.match(/^([\d.]+)\s*oz(?:ounce)?s?$/);
   if (ozMatch) return parseFloat(ozMatch[1]) * 28.3495;
-
   return null;
 }
 
-// ── ① Weedmaps — Cake House Hemet ─────────────────────────────────────────────
+// ── ① iHeartJane via Playwright — Cake House San Jose (store 6524) ─────────────
+// Uses a real headless browser to bypass Cloudflare bot detection.
 
-const WEEDMAPS_SLUG = "the-cake-house-hemet";
+async function scrapeJane(storeId, sourceKey) {
+  console.log(`\n[Jane/Playwright] Fetching store ${storeId}…`);
 
-async function scrapeWeedmaps(slug, sourceKey) {
-  console.log(`\n[Weedmaps] Fetching "${slug}"…`);
+  const browser = await chromium.launch({ headless: true });
+  const context = await browser.newContext({
+    userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+  });
+  const page = await context.newPage();
+
   const products = [];
-  let offset = 0;
-  const limit = 100;
 
-  while (true) {
-    const url = `https://api-g.weedmaps.com/wm/v2/listings/${slug}/menu_items` +
-      `?include_unpublished=false&sort_by=name&sort_dir=asc` +
-      `&category_filter=flower&size=${limit}&offset=${offset}`;
+  // Intercept the Jane API calls the page makes and collect the JSON
+  page.on("response", async (response) => {
+    const url = response.url();
+    if (url.includes(`/stores/${storeId}/search/products`) && url.includes("category=flower")) {
+      try {
+        const json = await response.json();
+        const items = json?.data ?? json?.products ?? json?.hits ?? [];
+        products.push(...items);
+        console.log(`  [Jane] Captured ${items.length} products from network response`);
+      } catch (e) {
+        // not JSON, skip
+      }
+    }
+  });
 
-    const res = await fetch(url, {
-      headers: {
-        "Accept":     "application/json",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
-        "Origin":     "https://weedmaps.com",
-        "Referer":    "https://weedmaps.com/",
-      },
-    });
-    if (!res.ok) throw new Error(`Weedmaps API ${res.status}: ${(await res.text()).slice(0, 300)}`);
-    const json = await res.json();
+  // Load the flower page — Jane will make its own API calls as it renders
+  await page.goto(`https://cakehousecannabis.com/order-weed/flower`, {
+    waitUntil: "networkidle",
+    timeout: 60000,
+  });
 
-    const items = json?.data?.menu_items ?? [];
-    if (!items.length) break;
-    products.push(...items);
-
-    const total = json?.meta?.total_count ?? json?.data?.total_count ?? null;
-    console.log(`[Weedmaps] offset ${offset}: ${items.length} items (${products.length}${total ? "/" + total : ""} total)`);
-    if (total !== null && products.length >= total) break;
-    if (items.length < limit) break;
-    offset += limit;
-    await sleep(500);
+  // Scroll down to trigger lazy loading of more products
+  for (let i = 0; i < 8; i++) {
+    await page.evaluate(() => window.scrollBy(0, 1200));
+    await sleep(1500);
   }
 
-  console.log(`[Weedmaps] ${products.length} flower products`);
+  await browser.close();
 
-  return products.flatMap(p => {
-    const variants = Array.isArray(p.variants) && p.variants.length
-      ? p.variants
-      : [{ price: p.price, option: null }];
+  console.log(`[Jane] ${products.length} flower products captured`);
+
+  // Deduplicate by product ID (scrolling may capture some pages twice)
+  const seen = new Set();
+  const unique = products.filter(p => {
+    const id = String(p.id ?? p.product_id ?? "");
+    if (seen.has(id)) return false;
+    seen.add(id);
+    return true;
+  });
+
+  return unique.flatMap(p => {
+    const variants = Array.isArray(p.prices) && p.prices.length
+      ? p.prices
+      : [{ option: null, price: p.price }];
 
     return variants.map(v => {
-      const option  = v.option ?? v.size ?? null;
-      const weightG = parseWeightGrams(String(option ?? ""));
+      const option      = v.weight ?? v.option ?? v.label ?? null;
+      const weightG     = parseWeightGrams(String(option ?? ""));
+      const priceDollars = (v.price ?? v.priceRec) != null
+        ? (v.price ?? v.priceRec) / 100
+        : null;
       return {
         source:          sourceKey,
-        jane_product_id: `wm-${p.id}-${option ?? "default"}`,
-        product_base_id: `wm-${p.id}`,
-        brand:           p.brand?.name ?? p.brand_name ?? "",
-        strain:          p.name ?? "",
-        lineage:         p.strain_classification ?? p.category ?? "",
+        jane_product_id: `${p.id ?? p.product_id}-${option ?? "default"}`,
+        product_base_id: String(p.id ?? p.product_id ?? ""),
+        brand:           p.brand ?? p.brand_name ?? "",
+        strain:          p.name ?? p.product_name ?? "",
+        lineage:         p.kind ?? p.lineage ?? "",
         weight_grams:    weightG,
         weight_label:    option,
-        price:           v.price != null ? parseFloat(v.price) : null,
-        thc_pct:         p.percent_thc ? parseFloat(p.percent_thc) : null,
-        cbd_pct:         p.percent_cbd ? parseFloat(p.percent_cbd) : null,
-        product_url:     `https://weedmaps.com/dispensaries/${slug}/menu/${p.slug ?? p.id}`,
-        image_url:       p.photos?.[0]?.original_url ?? p.avatar_image?.original_url ?? null,
+        price:           priceDollars,
+        thc_pct:         p.percent_thc ?? null,
+        cbd_pct:         p.percent_cbd ?? null,
+        product_url:     `https://cakehousecannabis.com/order-weed/products/${p.id}/${p.slug ?? ""}`,
+        image_url:       p.image ?? p.photo ?? null,
       };
     });
   });
@@ -151,11 +164,9 @@ async function dutchieGql(query, variables) {
 
 async function scrapeDutchie(slug, sourceKey, siteBase) {
   console.log(`\n[Dutchie] Fetching "${slug}"…`);
-
   const data  = await dutchieGql(PRODUCTS_QUERY, { retailerSlug: slug });
   const raw   = data?.filteredProducts?.products ?? [];
   const total = data?.filteredProducts?.totalCount ?? 0;
-
   console.log(`[Dutchie] ${raw.length} of ${total} flower products`);
 
   return raw.flatMap(p =>
@@ -250,7 +261,7 @@ async function markMissing(seenIds) {
   return gone;
 }
 
-// ── Alert: only for favorited products that restocked ─────────────────────────
+// ── Alert ──────────────────────────────────────────────────────────────────────
 
 async function loadFavoritedProducts() {
   const { data, error } = await supabase
@@ -275,8 +286,8 @@ async function sendAlert(restockedProducts) {
     return;
   }
 
-  const favBaseIds  = new Set(favProducts.map(f => f.product_base_id).filter(Boolean));
-  const alertItems  = restockedProducts.filter(p => favBaseIds.has(p.product_base_id));
+  const favBaseIds = new Set(favProducts.map(f => f.product_base_id).filter(Boolean));
+  const alertItems = restockedProducts.filter(p => favBaseIds.has(p.product_base_id));
   if (!alertItems.length) {
     console.log("  No favorited products restocked — no email sent.");
     return;
@@ -289,21 +300,17 @@ async function sendAlert(restockedProducts) {
     auth:   { user: SMTP_USER, pass: SMTP_PASS },
   });
 
-  const storeLabel = { "cakehouse": "Cake House", "harborside-sj": "Harborside SJ" };
-
-  let html = `<h2>🌿 FreshFlower — Favorited Products Back In Stock</h2>
-<p>The following products you favorited are now available:</p><ul>`;
-
+  const storeLabel = { "cakehouse-sj": "Cake House SJ", "harborside-sj": "Harborside SJ" };
+  let html = `<h2>🌿 FreshFlower — Favorited Products Back In Stock</h2><ul>`;
   for (const p of alertItems) {
-    const store = storeLabel[p.source] ?? p.source;
     const wt    = p.weight_label ? ` — ${p.weight_label}` : "";
     const price = p.price != null ? ` — $${p.price.toFixed(2)}` : "";
+    const store = storeLabel[p.source] ?? p.source;
     html += `<li><strong>${p.brand}</strong> — ${p.strain} (${p.lineage || "??"})${wt}${price} — ${store}`;
     if (p.product_url) html += ` — <a href="${p.product_url}">View</a>`;
     html += `</li>`;
   }
-
-  html += `</ul><p><small>Manage alerts in your <a href="https://faulty-ham.github.io/freshflower/">FreshFlower dashboard</a>.</small></p>`;
+  html += `</ul><p><small>Manage alerts at <a href="https://faulty-ham.github.io/freshflower/">FreshFlower</a>.</small></p>`;
 
   await transporter.sendMail({
     from:    `"FreshFlower" <${SMTP_USER}>`,
@@ -311,7 +318,7 @@ async function sendAlert(restockedProducts) {
     subject: `🌿 ${alertItems.length} favorited product${alertItems.length !== 1 ? "s" : ""} back in stock — FreshFlower`,
     html,
   });
-  console.log(`  📧 Alert sent: ${alertItems.length} favorited product(s) restocked`);
+  console.log(`  📧 Alert sent: ${alertItems.length} product(s) restocked`);
 }
 
 // ── Main ───────────────────────────────────────────────────────────────────────
@@ -319,24 +326,19 @@ async function sendAlert(restockedProducts) {
 async function main() {
   console.log(`\n🌿 FreshFlower scrape — ${new Date().toISOString()}`);
 
-  const [wmProducts, dutchieProducts] = await Promise.all([
-    scrapeWeedmaps(WEEDMAPS_SLUG, "cakehouse"),
-    scrapeDutchie(
-      HARBORSIDE_SLUG,
-      "harborside-sj",
-      "https://shopharborside.com/stores/san-jose-10th-street/products"
-    ),
-  ]);
+  // Run sequentially — Playwright needs browser resources
+  const janeProducts    = await scrapeJane(6524, "cakehouse-sj");
+  const dutchieProducts = await scrapeDutchie(
+    HARBORSIDE_SLUG,
+    "harborside-sj",
+    "https://shopharborside.com/stores/san-jose-10th-street/products"
+  );
 
-  const all = [...wmProducts, ...dutchieProducts];
+  const all = [...janeProducts, ...dutchieProducts];
   console.log(`\n  ${all.length} total variants across both stores`);
 
   const restockedAndNew = await findRestockedAndNew(all);
-  if (restockedAndNew.length) {
-    console.log(`  🆕 ${restockedAndNew.length} new/restocked variants`);
-  } else {
-    console.log("  No new or restocked products this run.");
-  }
+  console.log(`  🆕 ${restockedAndNew.length} new/restocked variants`);
 
   const seenIds = new Set(all.map(p => p.jane_product_id));
   for (const p of all) {
