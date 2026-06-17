@@ -114,15 +114,9 @@ async function scrapeWeedmaps(slug, sourceKey) {
 const DUTCHIE_GQL     = "https://plus.dutchie.com/plus/2021-07/graphql";
 const HARBORSIDE_SLUG = "san-jose-10th-street";
 
-const RETAILER_QUERY = `
-  query Retailer($slug: String!) {
-    retailer(slug: $slug) { id name }
-  }
-`;
-
 const PRODUCTS_QUERY = `
-  query FilteredProducts($retailerId: ID!, $filter: ProductFilter, $pagination: PaginationInput) {
-    filteredProducts(retailerId: $retailerId, filter: $filter, pagination: $pagination) {
+  query FilteredProducts($retailerSlug: String!, $filter: ProductFilter, $pagination: PaginationInput) {
+    filteredProducts(retailerSlug: $retailerSlug, filter: $filter, pagination: $pagination) {
       products {
         id name image
         brand { name }
@@ -152,12 +146,7 @@ async function dutchieGql(query, variables) {
 }
 
 async function scrapeDutchie(slug, sourceKey, siteBase) {
-  console.log(`\n[Dutchie] Fetching retailer "${slug}"…`);
-
-  const retailerData = await dutchieGql(RETAILER_QUERY, { slug });
-  const retailerId   = retailerData?.retailer?.id;
-  if (!retailerId) throw new Error(`Could not resolve Dutchie retailer ID for "${slug}"`);
-  console.log(`[Dutchie] Retailer ID: ${retailerId}`);
+  console.log(`\n[Dutchie] Fetching "${slug}"…`);
 
   const raw      = [];
   const pageSize = 100;
@@ -165,9 +154,9 @@ async function scrapeDutchie(slug, sourceKey, siteBase) {
 
   while (true) {
     const data  = await dutchieGql(PRODUCTS_QUERY, {
-      retailerId,
-      filter:     { category: "Flower" },
-      pagination: { limit: pageSize, offset },
+      retailerSlug: slug,
+      filter:       { category: "Flower" },
+      pagination:   { limit: pageSize, offset },
     });
     const page  = data?.filteredProducts?.products ?? [];
     const total = data?.filteredProducts?.totalCount ?? 0;
