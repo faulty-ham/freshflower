@@ -95,16 +95,15 @@ async function scrapeJane(browser) {
       const lines = text.split(/\n|\r/).map(l => l.trim()).filter(Boolean);
 
       // Find weight — looks like "(3.5G)" or "(1oz)"
-      const weightLine = lines.find(l => /^\([\d.]+\s*[gGoO]/.test(l) || /^\([\w\s/]+oz/i.test(l));
-      const weightStr  = weightLine ? weightLine.replace(/[()]/g, "").trim() : null;
+		const weightMatch = text.match(/\(([\d.]+\s*[gG](?:rams?)?)\)/i) ??
+                    text.match(/\(([\d./]+\s*(?:oz|ounce)s?)\)/i);
+		const weightStr   = weightMatch ? weightMatch[1].trim() : null;
 
       // Find price — looks like "$19.99" or "$11.99/3.5g"
-      const priceLine  = lines.find(l => /^\$[\d.]+/.test(l));
-      const priceMatch = priceLine?.match(/\$([\d.]+)$/);  // last price = sale price
-      const allPrices  = [...(priceLine?.matchAll(/\$([\d.]+)/g) ?? [])];
-      const price      = allPrices.length > 0
-        ? parseFloat(allPrices[allPrices.length - 1][1])  // last = current price
-        : null;
+	const allPrices = [...text.matchAll(/\$([\d.]+)/g)];
+	const price     = allPrices.length > 0
+	  ? parseFloat(allPrices[allPrices.length - 1][1])
+	  : null;
 
       // THC %
       const thcMatch  = text.match(/THC\s*([\d.]+)%/i);
@@ -201,7 +200,7 @@ async function scrapeDutchie(browser) {
 
   await page.goto(
     "https://shopharborside.com/stores/san-jose-10th-street/products/flower",
-    { waitUntil: "networkidle", timeout: 90000 }
+    { waitUntil: "domcontentloaded", timeout: 60000 }
   );
 
   await sleep(5000);
