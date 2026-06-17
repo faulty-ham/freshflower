@@ -1,0 +1,663 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Flower Tracker</title>
+  <style>
+    :root {
+      --bg:        #0f1106;
+      --surface:   #181a0e;
+      --border:    #2a2e18;
+      --accent:    #a8c45a;
+      --accent-dim:#6b7d38;
+      --text:      #dde8b0;
+      --muted:     #7a8660;
+      --danger:    #c45a5a;
+      --fav:       #e8b84b;
+      --sativa:    #c49a5a;
+      --indica:    #7a5ac4;
+      --hybrid:    #5a9ac4;
+      --cbd:       #5ac47a;
+      --radius:    6px;
+      --font-ui:   'DM Mono', 'Fira Mono', monospace;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: var(--bg); color: var(--text); font-family: system-ui, sans-serif; font-size: 14px; min-height: 100vh; }
+
+    /* ── Layout ── */
+    .app { display: flex; flex-direction: column; height: 100vh; }
+
+    header {
+      padding: 12px 20px;
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; gap: 14px;
+      background: var(--surface); flex-shrink: 0;
+    }
+    header h1 { font-family: var(--font-ui); font-size: 13px; letter-spacing: .12em; text-transform: uppercase; color: var(--accent); flex-shrink: 0; }
+    .status-pill { font-family: var(--font-ui); font-size: 11px; color: var(--muted); margin-left: auto; }
+
+    /* ── Filters ── */
+    .filters {
+      padding: 10px 20px; border-bottom: 1px solid var(--border);
+      background: var(--surface); display: flex; flex-wrap: wrap; gap: 8px; align-items: center; flex-shrink: 0;
+    }
+    .filter-group { display: flex; align-items: center; gap: 6px; }
+    .filter-label { font-family: var(--font-ui); font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); white-space: nowrap; }
+
+    select, input[type="text"] {
+      background: var(--bg); color: var(--text); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 5px 8px; font-size: 13px; outline: none; cursor: pointer;
+    }
+    select:focus, input[type="text"]:focus { border-color: var(--accent-dim); }
+
+    /* Brand popover */
+    .brand-dropdown { position: relative; }
+    .brand-btn {
+      background: var(--bg); color: var(--text); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 5px 10px; font-size: 13px; cursor: pointer;
+      white-space: nowrap; display: flex; align-items: center; gap: 6px;
+    }
+    .brand-btn:hover { border-color: var(--accent-dim); }
+    .brand-popover {
+      display: none; position: absolute; top: calc(100% + 4px); left: 0;
+      background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+      min-width: 240px; max-height: 300px; overflow-y: auto; z-index: 100; padding: 6px 0;
+      box-shadow: 0 8px 24px rgba(0,0,0,.5);
+    }
+    .brand-popover.open { display: block; }
+    .brand-search { padding: 4px 10px 8px; border-bottom: 1px solid var(--border); margin-bottom: 4px; }
+    .brand-search input { width: 100%; }
+    .brand-option { display: flex; align-items: center; gap: 8px; padding: 5px 12px; cursor: pointer; font-size: 13px; }
+    .brand-option:hover { background: var(--border); }
+    .brand-option input[type=checkbox] { accent-color: var(--accent); cursor: pointer; flex-shrink: 0; }
+    .brand-option label { cursor: pointer; flex: 1; }
+    .brand-fav-star { color: var(--fav); font-size: 12px; cursor: pointer; padding: 0 2px; flex-shrink: 0; }
+    .brand-fav-star.unfav { color: var(--border); }
+    .brand-fav-star:hover { color: var(--fav); }
+    .brand-actions { padding: 6px 12px 2px; border-top: 1px solid var(--border); margin-top: 4px; display: flex; gap: 8px; }
+    .link-btn { background: none; border: none; color: var(--accent-dim); font-size: 11px; cursor: pointer; padding: 0; text-decoration: underline; }
+    .link-btn:hover { color: var(--accent); }
+
+    /* Toggle buttons */
+    .toggle-group { display: flex; gap: 4px; }
+    .tog-btn {
+      padding: 4px 10px; border-radius: var(--radius); font-size: 12px;
+      font-family: var(--font-ui); border: 1px solid var(--border);
+      background: var(--bg); color: var(--muted); cursor: pointer; letter-spacing: .05em;
+    }
+    .tog-btn.active { background: var(--accent-dim); border-color: var(--accent-dim); color: var(--bg); }
+
+    .lineage-btn { padding: 4px 9px; border-radius: var(--radius); font-size: 11px; font-family: var(--font-ui); border: 1px solid var(--border); background: var(--bg); color: var(--muted); cursor: pointer; letter-spacing: .05em; text-transform: uppercase; }
+    .lineage-btn[data-lineage="sativa"].active { background: var(--sativa); border-color: var(--sativa); color: var(--bg); }
+    .lineage-btn[data-lineage="indica"].active { background: var(--indica); border-color: var(--indica); color: var(--text); }
+    .lineage-btn[data-lineage="hybrid"].active { background: var(--hybrid); border-color: var(--hybrid); color: var(--bg); }
+    .lineage-btn[data-lineage="cbd"].active    { background: var(--cbd);    border-color: var(--cbd);    color: var(--bg); }
+
+    .fav-filter-btn { padding: 4px 9px; border-radius: var(--radius); font-size: 12px; font-family: var(--font-ui); border: 1px solid var(--border); background: var(--bg); color: var(--muted); cursor: pointer; }
+    .fav-filter-btn.active { background: rgba(232,184,75,.15); border-color: var(--fav); color: var(--fav); }
+
+    .reset-btn { padding: 4px 9px; border-radius: var(--radius); font-size: 11px; font-family: var(--font-ui); border: 1px solid var(--border); background: var(--bg); color: var(--muted); cursor: pointer; margin-left: 2px; }
+    .reset-btn:hover { border-color: var(--accent-dim); color: var(--text); }
+
+    /* Sort bar */
+    .sort-bar {
+      padding: 6px 20px; border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; gap: 12px; flex-shrink: 0; background: var(--bg);
+    }
+    .count-label { font-family: var(--font-ui); font-size: 11px; color: var(--muted); }
+    .count-label span { color: var(--accent); }
+    .sort-group { display: flex; align-items: center; gap: 6px; margin-left: auto; }
+
+    /* Grid */
+    .grid-wrap { flex: 1; overflow-y: auto; padding: 16px 20px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
+
+    /* Card */
+    .card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); overflow: hidden;
+      display: flex; flex-direction: column; transition: border-color .15s; position: relative;
+    }
+    .card:hover { border-color: var(--accent-dim); }
+    .card.brand-fav { border-color: rgba(232,184,75,.3); }
+    .card.product-fav { border-color: var(--fav); }
+
+    .card-img-wrap { position: relative; }
+    .card-img { width: 100%; aspect-ratio: 1; object-fit: cover; background: var(--bg); display: block; }
+    .card-img-placeholder { width: 100%; aspect-ratio: 1; background: var(--bg); display: flex; align-items: center; justify-content: center; font-size: 32px; color: var(--border); }
+
+    /* Badges on image */
+    .img-badges { position: absolute; top: 7px; left: 7px; display: flex; flex-direction: column; gap: 3px; }
+    .new-badge { background: var(--accent); color: var(--bg); font-family: var(--font-ui); font-size: 9px; letter-spacing: .1em; text-transform: uppercase; padding: 2px 6px; border-radius: 3px; width: fit-content; }
+    .date-badge { background: rgba(15,17,6,.75); color: var(--muted); font-family: var(--font-ui); font-size: 9px; padding: 2px 5px; border-radius: 3px; width: fit-content; }
+
+    /* Fav star on card */
+    .card-fav-btn {
+      position: absolute; top: 7px; right: 7px;
+      background: rgba(15,17,6,.7); border: none; border-radius: 50%;
+      width: 26px; height: 26px; display: flex; align-items: center; justify-content: center;
+      cursor: pointer; font-size: 14px; transition: background .15s;
+    }
+    .card-fav-btn:hover { background: rgba(15,17,6,.9); }
+
+    .card-body { padding: 10px 12px 12px; flex: 1; display: flex; flex-direction: column; gap: 4px; }
+    .card-brand { font-family: var(--font-ui); font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); display: flex; align-items: center; gap: 4px; }
+    .brand-star { color: var(--fav); font-size: 10px; }
+    .card-strain { font-size: 14px; font-weight: 600; color: var(--text); line-height: 1.3; }
+
+    /* Date added */
+    .card-date { font-family: var(--font-ui); font-size: 10px; color: var(--muted); margin-top: 1px; }
+    .card-date-new { color: var(--accent); }
+
+    .card-meta { display: flex; align-items: center; gap: 6px; margin-top: 3px; flex-wrap: wrap; }
+    .badge { font-family: var(--font-ui); font-size: 10px; letter-spacing: .06em; padding: 2px 6px; border-radius: 3px; text-transform: uppercase; }
+    .badge-sativa { background: rgba(196,154,90,.18); color: var(--sativa); }
+    .badge-indica { background: rgba(122,90,196,.18); color: var(--indica); }
+    .badge-hybrid { background: rgba(90,154,196,.18); color: var(--hybrid); }
+    .badge-cbd    { background: rgba(90,196,122,.18); color: var(--cbd); }
+    .badge-other  { background: rgba(255,255,255,.07); color: var(--muted); }
+    .badge-store  { font-family: var(--font-ui); font-size: 9px; letter-spacing: .08em; padding: 2px 5px; border-radius: 3px; text-transform: uppercase; background: rgba(255,255,255,.06); color: var(--muted); }
+
+    .card-price-row { margin-top: auto; padding-top: 8px; display: flex; align-items: baseline; gap: 8px; }
+    .card-price { font-family: var(--font-ui); font-size: 15px; color: var(--accent); font-weight: 600; }
+    .card-weight { font-family: var(--font-ui); font-size: 11px; color: var(--muted); }
+    .card-link { display: block; margin-top: 8px; padding: 6px; text-align: center; background: var(--border); border-radius: var(--radius); color: var(--muted); text-decoration: none; font-size: 11px; font-family: var(--font-ui); letter-spacing: .06em; transition: background .15s, color .15s; }
+    .card-link:hover { background: var(--accent-dim); color: var(--bg); }
+
+    /* States */
+    .state-msg { grid-column: 1/-1; padding: 60px 20px; text-align: center; color: var(--muted); font-family: var(--font-ui); font-size: 13px; letter-spacing: .08em; }
+    .spinner { display: inline-block; width: 20px; height: 20px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .7s linear infinite; margin-bottom: 12px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Toast */
+    .toast { position: fixed; bottom: 20px; right: 20px; background: var(--surface); border: 1px solid var(--accent-dim); border-radius: var(--radius); padding: 10px 16px; font-family: var(--font-ui); font-size: 12px; color: var(--text); z-index: 200; opacity: 0; transform: translateY(8px); transition: all .2s; pointer-events: none; }
+    .toast.show { opacity: 1; transform: translateY(0); }
+  </style>
+</head>
+<body>
+<div class="app">
+
+  <header>
+    <h1>🌿 Flower Tracker</h1>
+    <div class="status-pill" id="status-pill">Loading…</div>
+  </header>
+
+  <div class="filters">
+
+    <!-- Brand -->
+    <div class="filter-group">
+      <span class="filter-label">Brand</span>
+      <div class="brand-dropdown" id="brand-dropdown">
+        <button class="brand-btn" id="brand-btn">All brands ▾</button>
+        <div class="brand-popover" id="brand-popover">
+          <div class="brand-search">
+            <input type="text" id="brand-search-input" placeholder="Search brands…">
+          </div>
+          <div id="brand-list"></div>
+          <div class="brand-actions">
+            <button class="link-btn" id="select-all-btn">Select all</button>
+            <button class="link-btn" id="clear-all-btn">Clear all</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Store -->
+    <div class="filter-group">
+      <span class="filter-label">Store</span>
+      <div class="toggle-group">
+        <button class="tog-btn active" data-store="all">All</button>
+        <button class="tog-btn" data-store="cakehouse">Cake House</button>
+        <button class="tog-btn" data-store="harborside-sj">Harborside</button>
+      </div>
+    </div>
+
+    <!-- Type -->
+    <div class="filter-group">
+      <span class="filter-label">Type</span>
+      <div class="toggle-group">
+        <button class="lineage-btn" data-lineage="sativa">Sativa</button>
+        <button class="lineage-btn" data-lineage="indica">Indica</button>
+        <button class="lineage-btn" data-lineage="hybrid">Hybrid</button>
+        <button class="lineage-btn" data-lineage="cbd">CBD</button>
+      </div>
+    </div>
+
+    <!-- Favorites filter -->
+    <div class="filter-group">
+      <span class="filter-label">Show</span>
+      <button class="fav-filter-btn" id="fav-filter-btn">⭐ Favorites only</button>
+    </div>
+
+    <button class="reset-btn" id="reset-btn">Reset</button>
+  </div>
+
+  <div class="sort-bar">
+    <span class="count-label"><span id="count-label">0</span> products</span>
+    <div class="sort-group">
+      <span class="filter-label">Sort</span>
+      <select id="sort-select">
+        <option value="fav-first">Favorites first</option>
+        <option value="brand">Brand A–Z</option>
+        <option value="date-desc">Date added (newest)</option>
+        <option value="date-asc">Date added (oldest)</option>
+        <option value="price-asc">Price low–high</option>
+        <option value="price-desc">Price high–low</option>
+        <option value="weight-asc">Weight low–high</option>
+        <option value="weight-desc">Weight high–low</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="grid-wrap">
+    <div class="grid" id="grid">
+      <div class="state-msg"><div class="spinner"></div><br>Connecting…</div>
+    </div>
+  </div>
+
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+// ── Config ────────────────────────────────────────────────────────────────────
+const SUPABASE_URL  = "https://oapjuqurbfimxopjpqgj.supabase.co";
+const SUPABASE_ANON = "sb_publishable_B6dXNLCuGE3n3z5qazgdLg_ZE-S4ZLr";
+const MIN_WEIGHT_G  = 3.5;
+const NEW_DAYS      = 3;   // products first seen within N days show "New" badge
+// ─────────────────────────────────────────────────────────────────────────────
+
+const API = (path, opts = {}) => fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+  headers: {
+    "apikey":        SUPABASE_ANON,
+    "Authorization": `Bearer ${SUPABASE_ANON}`,
+    "Content-Type":  "application/json",
+    "Prefer":        "return=representation",
+    ...opts.headers,
+  },
+  ...opts,
+});
+
+// ── State ─────────────────────────────────────────────────────────────────────
+let allProducts    = [];
+let brands         = [];
+let favBrands      = new Set();   // brand names (lowercase) that are favorited
+let favProducts    = new Set();   // product_base_ids that are favorited
+let favAlerts      = new Set();   // product_base_ids with alerts on
+let favData        = [];          // raw rows from flower.favorites
+
+let selectedBrands = new Set();
+let activeStore    = "all";
+let activeLineages = new Set();
+let favsOnly       = false;
+let sortBy         = "fav-first";
+
+// ── API helpers ───────────────────────────────────────────────────────────────
+
+async function fetchProducts() {
+  const res = await API(
+    `flower.products?is_available=eq.true&weight_grams=gte.${MIN_WEIGHT_G}` +
+    `&select=jane_product_id,product_base_id,source,brand,strain,lineage,` +
+    `weight_grams,weight_label,price,thc_pct,product_url,image_url,first_seen_at` +
+    `&order=brand.asc,strain.asc,weight_grams.asc`
+  );
+  if (!res.ok) throw new Error(`Products fetch failed: ${res.status}`);
+  return res.json();
+}
+
+async function fetchFavorites() {
+  const res = await API(`flower.favorites?select=*`);
+  if (!res.ok) throw new Error(`Favorites fetch failed: ${res.status}`);
+  return res.json();
+}
+
+function applyFavData(rows) {
+  favData     = rows;
+  favBrands   = new Set(rows.filter(r => r.type === "brand").map(r => r.brand?.toLowerCase()));
+  favProducts = new Set(rows.filter(r => r.type === "product").map(r => r.product_base_id));
+  favAlerts   = new Set(rows.filter(r => r.type === "product" && r.alert_enabled).map(r => r.product_base_id));
+}
+
+// ── Favorites mutations ───────────────────────────────────────────────────────
+
+function showToast(msg) {
+  const t = document.getElementById("toast");
+  t.textContent = msg;
+  t.classList.add("show");
+  setTimeout(() => t.classList.remove("show"), 2200);
+}
+
+async function toggleBrandFav(brand) {
+  const key = brand.toLowerCase();
+  if (favBrands.has(key)) {
+    // Remove
+    const row = favData.find(r => r.type === "brand" && r.brand?.toLowerCase() === key);
+    if (row) {
+      await API(`flower.favorites?id=eq.${row.id}`, { method: "DELETE" });
+      favBrands.delete(key);
+      favData = favData.filter(r => r.id !== row.id);
+      showToast(`Removed ${brand} from favorites`);
+    }
+  } else {
+    // Add
+    const res = await API(`flower.favorites`, {
+      method: "POST",
+      body: JSON.stringify({ type: "brand", brand, alert_enabled: false }),
+    });
+    if (res.ok) {
+      const [row] = await res.json();
+      favBrands.add(key);
+      favData.push(row);
+      showToast(`⭐ ${brand} added to favorites`);
+    }
+  }
+  buildBrandList(document.getElementById("brand-search-input").value);
+  render();
+}
+
+async function toggleProductFav(product_base_id, brand, strain) {
+  if (favProducts.has(product_base_id)) {
+    const row = favData.find(r => r.type === "product" && r.product_base_id === product_base_id);
+    if (row) {
+      await API(`flower.favorites?id=eq.${row.id}`, { method: "DELETE" });
+      favProducts.delete(product_base_id);
+      favAlerts.delete(product_base_id);
+      favData = favData.filter(r => r.id !== row.id);
+      showToast(`Removed ${strain} from favorites`);
+    }
+  } else {
+    const res = await API(`flower.favorites`, {
+      method: "POST",
+      body: JSON.stringify({ type: "product", brand, strain, product_base_id, alert_enabled: true }),
+    });
+    if (res.ok) {
+      const [row] = await res.json();
+      favProducts.add(product_base_id);
+      favAlerts.add(product_base_id);
+      favData.push(row);
+      showToast(`⭐ ${strain} favorited — alerts on`);
+    }
+  }
+  render();
+}
+
+async function toggleProductAlert(product_base_id) {
+  const row = favData.find(r => r.type === "product" && r.product_base_id === product_base_id);
+  if (!row) return;
+  const newVal = !row.alert_enabled;
+  const res = await API(`flower.favorites?id=eq.${row.id}`, {
+    method:  "PATCH",
+    body:    JSON.stringify({ alert_enabled: newVal }),
+  });
+  if (res.ok) {
+    row.alert_enabled = newVal;
+    if (newVal) favAlerts.add(product_base_id);
+    else        favAlerts.delete(product_base_id);
+    showToast(newVal ? "🔔 Alert on" : "🔕 Alert off");
+    render();
+  }
+}
+
+// ── Brand popover ─────────────────────────────────────────────────────────────
+
+function buildBrandList(filterText = "") {
+  const list  = document.getElementById("brand-list");
+  const lower = filterText.toLowerCase();
+  list.innerHTML = brands
+    .filter(b => b.toLowerCase().includes(lower))
+    .map(b => {
+      const isFav = favBrands.has(b.toLowerCase());
+      return `
+        <div class="brand-option">
+          <input type="checkbox" id="b-${CSS.escape(b)}" value="${b}"
+            ${!selectedBrands.size || selectedBrands.has(b) ? "checked" : ""}>
+          <label for="b-${CSS.escape(b)}">${b}</label>
+          <span class="brand-fav-star ${isFav ? "" : "unfav"}"
+            data-brand="${b}" title="${isFav ? "Unfavorite brand" : "Favorite brand"}">★</span>
+        </div>`;
+    }).join("");
+
+  list.querySelectorAll("input[type=checkbox]").forEach(cb => {
+    cb.addEventListener("change", () => {
+      if (cb.checked) selectedBrands.add(cb.value);
+      else selectedBrands.delete(cb.value);
+      if (selectedBrands.size === brands.length) selectedBrands.clear();
+      updateBrandBtn();
+      render();
+    });
+  });
+
+  list.querySelectorAll(".brand-fav-star").forEach(star => {
+    star.addEventListener("click", async e => {
+      e.stopPropagation();
+      await toggleBrandFav(star.dataset.brand);
+    });
+  });
+}
+
+function updateBrandBtn() {
+  const btn = document.getElementById("brand-btn");
+  if (!selectedBrands.size)      btn.textContent = "All brands ▾";
+  else if (selectedBrands.size === 1) btn.textContent = [...selectedBrands][0] + " ▾";
+  else btn.textContent = `${selectedBrands.size} brands ▾`;
+}
+
+// ── Render ────────────────────────────────────────────────────────────────────
+
+function lineageBadge(lineage = "") {
+  const l = lineage.toLowerCase();
+  if (l.includes("sativa")) return `<span class="badge badge-sativa">Sativa</span>`;
+  if (l.includes("indica")) return `<span class="badge badge-indica">Indica</span>`;
+  if (l.includes("hybrid")) return `<span class="badge badge-hybrid">Hybrid</span>`;
+  if (l.includes("cbd"))    return `<span class="badge badge-cbd">CBD</span>`;
+  if (lineage)              return `<span class="badge badge-other">${lineage}</span>`;
+  return "";
+}
+
+function formatDate(iso) {
+  if (!iso) return null;
+  const d = new Date(iso);
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+}
+
+function isNew(firstSeenAt) {
+  if (!firstSeenAt) return false;
+  return (Date.now() - new Date(firstSeenAt)) / 86400000 <= NEW_DAYS;
+}
+
+function render() {
+  const grid = document.getElementById("grid");
+
+  let filtered = allProducts.filter(p => {
+    if (selectedBrands.size && !selectedBrands.has(p.brand)) return false;
+    if (activeStore !== "all" && p.source !== activeStore)   return false;
+    if (activeLineages.size) {
+      const l = (p.lineage ?? "").toLowerCase();
+      if (![...activeLineages].some(al => l.includes(al))) return false;
+    }
+    if (favsOnly) {
+      const bf = favBrands.has((p.brand ?? "").toLowerCase());
+      const pf = favProducts.has(p.product_base_id);
+      if (!bf && !pf) return false;
+    }
+    return true;
+  });
+
+  // Sort
+  filtered.sort((a, b) => {
+    const pf = (p) => favProducts.has(p.product_base_id) ? 0 : favBrands.has((p.brand ?? "").toLowerCase()) ? 1 : 2;
+    switch (sortBy) {
+      case "fav-first":   return pf(a) - pf(b) || (a.brand ?? "").localeCompare(b.brand ?? "") || (a.strain ?? "").localeCompare(b.strain ?? "");
+      case "brand":       return (a.brand ?? "").localeCompare(b.brand ?? "") || (a.strain ?? "").localeCompare(b.strain ?? "");
+      case "date-desc":   return new Date(b.first_seen_at) - new Date(a.first_seen_at);
+      case "date-asc":    return new Date(a.first_seen_at) - new Date(b.first_seen_at);
+      case "price-asc":   return (a.price ?? Infinity) - (b.price ?? Infinity);
+      case "price-desc":  return (b.price ?? 0) - (a.price ?? 0);
+      case "weight-asc":  return (a.weight_grams ?? 0) - (b.weight_grams ?? 0);
+      case "weight-desc": return (b.weight_grams ?? 0) - (a.weight_grams ?? 0);
+    }
+  });
+
+  document.getElementById("count-label").textContent = filtered.length;
+
+  if (!filtered.length) {
+    grid.innerHTML = `<div class="state-msg">No products match the current filters.</div>`;
+    return;
+  }
+
+  const storeLabel = { "cakehouse": "Cake House", "harborside-sj": "Harborside" };
+
+  grid.innerHTML = filtered.map(p => {
+    const isBrandFav   = favBrands.has((p.brand ?? "").toLowerCase());
+    const isProdFav    = favProducts.has(p.product_base_id);
+    const hasAlert     = favAlerts.has(p.product_base_id);
+    const fresh        = isNew(p.first_seen_at);
+    const dateStr      = formatDate(p.first_seen_at);
+    const price        = p.price != null ? `$${p.price.toFixed(2)}` : "—";
+    const weight       = p.weight_label ?? (p.weight_grams ? `${p.weight_grams}g` : "");
+    const store        = storeLabel[p.source] ?? p.source;
+    const cardClass    = isProdFav ? "card product-fav" : isBrandFav ? "card brand-fav" : "card";
+    const favStar      = isProdFav ? "⭐" : "☆";
+    const imgTag       = p.image_url
+      ? `<img class="card-img" src="${p.image_url}" alt="${p.strain}" loading="lazy">`
+      : `<div class="card-img-placeholder">🌿</div>`;
+
+    // Alert toggle only shows when product is favorited
+    const alertToggle = isProdFav
+      ? `<span style="font-size:11px;font-family:var(--font-ui);color:${hasAlert ? "var(--accent)" : "var(--muted)"};cursor:pointer;margin-left:auto;"
+           data-action="alert" data-base="${p.product_base_id}"
+           title="${hasAlert ? "Click to disable alert" : "Click to enable alert"}">
+           ${hasAlert ? "🔔 Alert on" : "🔕 Alert off"}
+         </span>`
+      : "";
+
+    return `
+      <div class="${cardClass}" data-base="${p.product_base_id}">
+        <div class="card-img-wrap">
+          ${imgTag}
+          <div class="img-badges">
+            ${fresh ? `<span class="new-badge">New</span>` : ""}
+            ${dateStr ? `<span class="date-badge">Added ${dateStr}</span>` : ""}
+          </div>
+          <button class="card-fav-btn" data-action="fav"
+            data-base="${p.product_base_id}" data-brand="${p.brand ?? ""}" data-strain="${p.strain ?? ""}"
+            title="${isProdFav ? "Remove from favorites" : "Add to favorites"}">${favStar}</button>
+        </div>
+        <div class="card-body">
+          <div class="card-brand">
+            ${isBrandFav ? `<span class="brand-star">★</span>` : ""}
+            ${p.brand ?? "—"}
+          </div>
+          <div class="card-strain">${p.strain ?? "—"}</div>
+          <div class="card-meta">
+            ${lineageBadge(p.lineage)}
+            <span class="badge-store">${store}</span>
+            ${alertToggle}
+          </div>
+          <div class="card-price-row">
+            <span class="card-price">${price}</span>
+            ${weight ? `<span class="card-weight">${weight}</span>` : ""}
+          </div>
+          ${p.product_url ? `<a class="card-link" href="${p.product_url}" target="_blank">View →</a>` : ""}
+        </div>
+      </div>`;
+  }).join("");
+
+  // Wire up card buttons
+  grid.querySelectorAll("[data-action='fav']").forEach(btn => {
+    btn.addEventListener("click", async e => {
+      e.preventDefault();
+      await toggleProductFav(btn.dataset.base, btn.dataset.brand, btn.dataset.strain);
+    });
+  });
+
+  grid.querySelectorAll("[data-action='alert']").forEach(el => {
+    el.addEventListener("click", async () => {
+      await toggleProductAlert(el.dataset.base);
+    });
+  });
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+
+async function init() {
+  try {
+    [allProducts, favData] = await Promise.all([fetchProducts(), fetchFavorites()]);
+    applyFavData(favData);
+
+    brands = [...new Set(allProducts.map(p => p.brand).filter(Boolean))].sort();
+
+    const pill = document.getElementById("status-pill");
+    pill.textContent = `${allProducts.length} variants · ${new Date().toLocaleTimeString()}`;
+
+    buildBrandList();
+    render();
+  } catch (err) {
+    document.getElementById("grid").innerHTML =
+      `<div class="state-msg">⚠️ Could not load data:<br>${err.message}</div>`;
+    console.error(err);
+  }
+}
+
+// ── Event wiring ──────────────────────────────────────────────────────────────
+
+// Brand popover
+document.getElementById("brand-btn").addEventListener("click", e => {
+  e.stopPropagation();
+  document.getElementById("brand-popover").classList.toggle("open");
+});
+document.addEventListener("click", () => document.getElementById("brand-popover").classList.remove("open"));
+document.getElementById("brand-popover").addEventListener("click", e => e.stopPropagation());
+document.getElementById("brand-search-input").addEventListener("input", e => buildBrandList(e.target.value));
+document.getElementById("select-all-btn").addEventListener("click", () => {
+  selectedBrands.clear(); buildBrandList(document.getElementById("brand-search-input").value); updateBrandBtn(); render();
+});
+document.getElementById("clear-all-btn").addEventListener("click", () => {
+  selectedBrands = new Set(brands); buildBrandList(document.getElementById("brand-search-input").value); updateBrandBtn(); render();
+});
+
+// Store
+document.querySelectorAll("[data-store]").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll("[data-store]").forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    activeStore = btn.dataset.store;
+    render();
+  });
+});
+
+// Lineage
+document.querySelectorAll(".lineage-btn").forEach(btn => {
+  btn.addEventListener("click", () => {
+    const l = btn.dataset.lineage;
+    if (activeLineages.has(l)) { activeLineages.delete(l); btn.classList.remove("active"); }
+    else                        { activeLineages.add(l);    btn.classList.add("active"); }
+    render();
+  });
+});
+
+// Favorites filter
+document.getElementById("fav-filter-btn").addEventListener("click", function() {
+  favsOnly = !favsOnly;
+  this.classList.toggle("active", favsOnly);
+  render();
+});
+
+// Sort
+document.getElementById("sort-select").addEventListener("change", e => { sortBy = e.target.value; render(); });
+
+// Reset
+document.getElementById("reset-btn").addEventListener("click", () => {
+  selectedBrands.clear(); activeStore = "all"; activeLineages.clear(); favsOnly = false; sortBy = "fav-first";
+  document.querySelectorAll("[data-store]").forEach(b => b.classList.toggle("active", b.dataset.store === "all"));
+  document.querySelectorAll(".lineage-btn").forEach(b => b.classList.remove("active"));
+  document.getElementById("fav-filter-btn").classList.remove("active");
+  document.getElementById("sort-select").value = "fav-first";
+  document.getElementById("brand-search-input").value = "";
+  buildBrandList(); updateBrandBtn(); render();
+});
+
+init();
+</script>
+</body>
+</html>
