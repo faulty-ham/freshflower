@@ -7,8 +7,7 @@ import { chromium } from "playwright";
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_KEY,
-  { db: { schema: "flower" } }
+  process.env.SUPABASE_SERVICE_KEY
 );
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
@@ -284,7 +283,7 @@ async function scrapeDutchie(browser) {
 // ── Database ───────────────────────────────────────────────────────────────────
 
 async function upsertProduct(p) {
-  const { error } = await supabase.from("products").upsert({
+  const { error } = await supabase.from("flower.products").upsert({
     jane_product_id: p.jane_product_id, product_base_id: p.product_base_id,
     source: p.source, brand: p.brand, strain: p.strain, lineage: p.lineage,
     weight_grams: p.weight_grams, weight_label: p.weight_label, price: p.price,
@@ -296,7 +295,7 @@ async function upsertProduct(p) {
 }
 
 async function logAvailability(janeProductId, isAvailable, price) {
-  const { error } = await supabase.from("availability_log").insert({
+  const { error } = await supabase.from("flower.availability_log").insert({
     jane_product_id: janeProductId, is_available: isAvailable,
     price: isAvailable ? price : null, scraped_at: new Date().toISOString(),
   });
@@ -307,7 +306,7 @@ async function findRestockedAndNew(products) {
   if (!products.length) return [];
   const ids = products.map(p => p.jane_product_id);
   const { data: existing } = await supabase
-    .from("products").select("jane_product_id, is_available").in("jane_product_id", ids);
+    .from("flower.products").select("jane_product_id, is_available").in("jane_product_id", ids);
   const map = new Map((existing ?? []).map(e => [e.jane_product_id, e.is_available]));
   return products.filter(p => {
     const prev = map.get(p.jane_product_id);
@@ -317,11 +316,11 @@ async function findRestockedAndNew(products) {
 
 async function markMissing(seenIds) {
   const { data: current, error } = await supabase
-    .from("products").select("jane_product_id, brand, strain, weight_label").eq("is_available", true);
+    .from("flower.products").select("jane_product_id, brand, strain, weight_label").eq("is_available", true);
   if (error) { console.error("markMissing error:", error.message); return []; }
   const gone = (current ?? []).filter(p => !seenIds.has(p.jane_product_id));
   for (const p of gone) {
-    await supabase.from("products")
+    await supabase.from("flower.products")
       .update({ is_available: false, last_seen_at: new Date().toISOString() })
       .eq("jane_product_id", p.jane_product_id);
     await logAvailability(p.jane_product_id, false, null);
@@ -335,7 +334,7 @@ async function sendAlert(restockedProducts) {
   if (!SMTP_HOST || !SMTP_USER || !SMTP_PASS || !ALERT_TO) {
     console.log("  (email not configured)"); return;
   }
-  const { data: favs } = await supabase.from("favorites")
+  const { data: favs } = await supabase.from("flower.favorites")
     .select("product_base_id").eq("type", "product").eq("alert_enabled", true);
   if (!favs?.length) { console.log("  (no alert favorites set)"); return; }
   const favIds     = new Set(favs.map(f => f.product_base_id).filter(Boolean));
