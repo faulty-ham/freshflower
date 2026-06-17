@@ -115,8 +115,12 @@ const DUTCHIE_GQL     = "https://plus.dutchie.com/plus/2021-07/graphql";
 const HARBORSIDE_SLUG = "san-jose-10th-street";
 
 const PRODUCTS_QUERY = `
-  query FilteredProducts($retailerSlug: String!, $filter: ProductFilter, $pagination: PaginationInput) {
-    filteredProducts(retailerSlug: $retailerSlug, filter: $filter, pagination: $pagination) {
+  query FilteredProducts($retailerSlug: String!) {
+    filteredProducts(
+      retailerSlug: $retailerSlug
+      filter: { category: "Flower" }
+      pagination: { limit: 100, offset: 0 }
+    ) {
       products {
         id name image
         brand { name }
@@ -148,26 +152,11 @@ async function dutchieGql(query, variables) {
 async function scrapeDutchie(slug, sourceKey, siteBase) {
   console.log(`\n[Dutchie] Fetching "${slug}"…`);
 
-  const raw      = [];
-  const pageSize = 100;
-  let offset     = 0;
+  const data  = await dutchieGql(PRODUCTS_QUERY, { retailerSlug: slug });
+  const raw   = data?.filteredProducts?.products ?? [];
+  const total = data?.filteredProducts?.totalCount ?? 0;
 
-  while (true) {
-    const data  = await dutchieGql(PRODUCTS_QUERY, {
-      retailerSlug: slug,
-      filter:       { category: "Flower" },
-      pagination:   { limit: pageSize, offset },
-    });
-    const page  = data?.filteredProducts?.products ?? [];
-    const total = data?.filteredProducts?.totalCount ?? 0;
-    raw.push(...page);
-    console.log(`[Dutchie] offset ${offset}: ${page.length} (${raw.length}/${total})`);
-    if (!page.length || raw.length >= total) break;
-    offset += pageSize;
-    await sleep(500);
-  }
-
-  console.log(`[Dutchie] ${raw.length} flower products`);
+  console.log(`[Dutchie] ${raw.length} of ${total} flower products`);
 
   return raw.flatMap(p =>
     (p.variants ?? [{ id: p.id, priceRec: null, option: null }]).map(v => {
