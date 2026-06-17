@@ -2,11 +2,8 @@ name: Flower Scraper
 
 on:
   schedule:
-    # 9:00 PM Pacific = 04:00 UTC (during PDT, UTC-7)
-    # Adjust to 05:00 UTC when PST kicks in (UTC-8) if you want strict 9pm year-round
+    # 9:00 PM Pacific = 04:00 UTC (PDT)
     - cron: "0 4 * * *"
-
-  # Allow manual trigger from the Actions tab for testing
   workflow_dispatch:
 
 jobs:
@@ -22,22 +19,20 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
-          cache: "npm"
-          cache-dependency-path: scripts/package.json
+          node-version: "22"
 
       - name: Install dependencies
         working-directory: scripts
-        run: npm ci
+        run: npm install
 
       - name: Run scraper
         working-directory: scripts
         env:
-          SUPABASE_URL:          ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_KEY:  ${{ secrets.SUPABASE_SERVICE_KEY }}
-          SMTP_HOST:             ${{ secrets.SMTP_HOST }}
-          SMTP_PORT:             ${{ secrets.SMTP_PORT }}
-          SMTP_USER:             ${{ secrets.SMTP_USER }}
-          SMTP_PASS:             ${{ secrets.SMTP_PASS }}
-          ALERT_TO:              ${{ secrets.ALERT_TO }}
+          SUPABASE_URL:         ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          SMTP_HOST:            ${{ secrets.SMTP_HOST }}
+          SMTP_PORT:            ${{ secrets.SMTP_PORT }}
+          SMTP_USER:            ${{ secrets.SMTP_USER }}
+          SMTP_PASS:            ${{ secrets.SMTP_PASS }}
+          ALERT_TO:             ${{ secrets.ALERT_TO }}
         run: node scrape.js
