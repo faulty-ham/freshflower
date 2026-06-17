@@ -1,17 +1,16 @@
 // scrape.js — FreshFlower multi-dispensary tracker
-// Uses Playwright for both stores to bypass bot detection and schema issues.
-//
-// Sources:
-//   • Cake House San Jose → iHeartJane (store 6524) via Playwright
-//   • Harborside San Jose → Dutchie Plus GraphQL via Playwright
+// Uses Playwright to scrape both stores.
 
 import { createClient } from "@supabase/supabase-js";
 import nodemailer from "nodemailer";
 import { chromium } from "playwright";
 
-const SUPABASE_URL = process.env.SUPABASE_URL;
-const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY;
-const supabase    = createClient(SUPABASE_URL, SUPABASE_KEY);
+// ── Supabase — must use schema option for non-public schemas ──────────────────
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_KEY,
+  { db: { schema: "flower" } }   // ← tells the client to use the flower schema
+);
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -38,198 +37,196 @@ function parseWeightGrams(option = "") {
   return null;
 }
 
-function normaliseJane(p) {
-  const variants = Array.isArray(p.prices) && p.prices.length
-    ? p.prices
-    : [{ option: null, price: p.price }];
-
-  return variants.map(v => {
-    const option      = v.weight ?? v.option ?? v.label ?? null;
-    const weightG     = parseWeightGrams(String(option ?? ""));
-    const priceDollars = (v.price ?? v.priceRec) != null
-      ? (v.price ?? v.priceRec) / 100
-      : null;
-    return {
-      source:          "cakehouse-sj",
-      jane_product_id: `jane-${p.id ?? p.product_id}-${option ?? "default"}`,
-      product_base_id: String(p.id ?? p.product_id ?? ""),
-      brand:           p.brand ?? p.brand_name ?? "",
-      strain:          p.name ?? p.product_name ?? "",
-      lineage:         p.kind ?? p.lineage ?? "",
-      weight_grams:    weightG,
-      weight_label:    option,
-      price:           priceDollars,
-      thc_pct:         p.percent_thc ?? null,
-      cbd_pct:         p.percent_cbd ?? null,
-      product_url:     `https://cakehousecannabis.com/order-weed/products/${p.id}/${p.slug ?? ""}`,
-      image_url:       p.image ?? p.photo ?? null,
-    };
-  });
-}
-
-function normaliseDutchie(p) {
-  return (p.variants ?? [{ id: p.id, priceRec: null, option: null }]).map(v => {
-    const weightG = parseWeightGrams(String(v.option ?? ""));
-    return {
-      source:          "harborside-sj",
-      jane_product_id: `dutchie-${p.id}-${v.id ?? v.option ?? "default"}`,
-      product_base_id: `dutchie-${p.id}`,
-      brand:           p.brand?.name ?? "",
-      strain:          p.name ?? "",
-      lineage:         p.strainType ?? "",
-      weight_grams:    weightG,
-      weight_label:    v.option ?? null,
-      price:           v.priceRec ?? null,
-      thc_pct:         null,
-      cbd_pct:         null,
-      product_url:     `https://shopharborside.com/stores/san-jose-10th-street/products/products/${p.id}`,
-      image_url:       p.image ?? null,
-    };
-  });
-}
-
-// ── ① Cake House San Jose via Playwright ──────────────────────────────────────
+// ── ① Cake House San Jose — Jane API called directly from inside browser ───────
 
 async function scrapeJane(browser) {
-  console.log("\n[Jane] Loading Cake House San Jose…");
+  console.log("\n[Jane] Fetching Cake House San Jose (store 6524)…");
   const context = await browser.newContext({
     userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
   });
   const page = await context.newPage();
 
-  const rawProducts = [];
-
-  // Listen for Jane API responses
-  page.on("response", async (res) => {
-    const url = res.url();
-    if (url.includes("api.iheartjane.com") && url.includes("search/products")) {
-      try {
-        const json = await res.json();
-        const items = json?.data ?? json?.products ?? json?.hits ?? [];
-        if (items.length) {
-          rawProducts.push(...items);
-          console.log(`  [Jane] +${items.length} products (total: ${rawProducts.length})`);
-        }
-      } catch (_) {}
-    }
-  });
-
-  // Navigate to the San Jose store flower page directly
+  // First visit the site to get cookies/headers that satisfy Cloudflare
   await page.goto("https://cakehousecannabis.com/order-weed/flower", {
     waitUntil: "domcontentloaded",
     timeout: 60000,
   });
+  await sleep(4000);
 
-  // Wait for initial products to load
-  await sleep(5000);
+  // Now call the Jane API directly from within the browser context
+  // This uses the browser's cookies and headers, bypassing Cloudflare
+  const rawProducts = await page.evaluate(async () => {
+    const storeId = 6524;
+    const allProducts = [];
+    let page = 1;
 
-  // Switch to San Jose store if currently on Hemet
-  try {
-    // Click the store selector if visible
-    const storeSel = await page.$('text="The Cake House Hemet"');
-    if (storeSel) {
-      await storeSel.click();
-      await sleep(1000);
-      const sjOption = await page.$('text="The Cake House - San Jose"');
-      if (sjOption) {
-        await sjOption.click();
-        await sleep(4000);
-        console.log("  [Jane] Switched to San Jose store");
+    while (true) {
+      const url = `https://api.iheartjane.com/v1/stores/${storeId}/search/products?category=flower&page=${page}&per_page=96&sort=popular`;
+      const res = await fetch(url, {
+        headers: {
+          "Accept": "application/json, text/plain, */*",
+          "Accept-Language": "en-US,en;q=0.9",
+          "Origin": "https://cakehousecannabis.com",
+          "Referer": "https://cakehousecannabis.com/order-weed/flower",
+        },
+        credentials: "include",
+      });
+      if (!res.ok) {
+        console.error("Jane API error:", res.status);
+        break;
       }
+      const json = await res.json();
+      const items = json?.data ?? json?.products ?? json?.hits ?? [];
+      if (!items.length) break;
+      allProducts.push(...items);
+      const total = json?.meta?.total ?? json?.total ?? null;
+      if (total !== null && allProducts.length >= total) break;
+      if (items.length < 96) break;
+      page++;
+      await new Promise(r => setTimeout(r, 500));
     }
-  } catch (e) {
-    console.log("  [Jane] Store switch not needed or failed:", e.message);
-  }
-
-  // Scroll to load all products
-  for (let i = 0; i < 12; i++) {
-    await page.evaluate(() => window.scrollBy(0, 1500));
-    await sleep(1500);
-  }
-
-  await sleep(2000);
-  await context.close();
-
-  // Deduplicate
-  const seen = new Set();
-  const unique = rawProducts.filter(p => {
-    const id = String(p.id ?? p.product_id ?? "");
-    if (!id || seen.has(id)) return false;
-    seen.add(id);
-    return true;
+    return allProducts;
   });
 
-  console.log(`[Jane] ${unique.length} unique flower products`);
-  return unique.flatMap(p => normaliseJane(p));
+  await context.close();
+  console.log(`[Jane] ${rawProducts.length} flower products`);
+
+  return rawProducts.flatMap(p => {
+    const variants = Array.isArray(p.prices) && p.prices.length
+      ? p.prices : [{ option: null, price: p.price }];
+    return variants.map(v => {
+      const option = v.weight ?? v.option ?? v.label ?? null;
+      const weightG = parseWeightGrams(String(option ?? ""));
+      const price = (v.price ?? v.priceRec) != null ? (v.price ?? v.priceRec) / 100 : null;
+      return {
+        source:          "cakehouse-sj",
+        jane_product_id: `jane-${p.id ?? p.product_id}-${option ?? "default"}`,
+        product_base_id: String(p.id ?? p.product_id ?? ""),
+        brand:           p.brand ?? p.brand_name ?? "",
+        strain:          p.name ?? p.product_name ?? "",
+        lineage:         p.kind ?? p.lineage ?? "",
+        weight_grams:    weightG,
+        weight_label:    option,
+        price,
+        thc_pct:         p.percent_thc ?? null,
+        cbd_pct:         p.percent_cbd ?? null,
+        product_url:     `https://cakehousecannabis.com/order-weed/products/${p.id}/${p.slug ?? ""}`,
+        image_url:       p.image ?? p.photo ?? null,
+      };
+    });
+  });
 }
 
-// ── ② Harborside San Jose via Playwright ──────────────────────────────────────
+// ── ② Harborside San Jose — Dutchie GraphQL called from inside browser ─────────
 
 async function scrapeDutchie(browser) {
-  console.log("\n[Dutchie] Loading Harborside San Jose…");
+  console.log("\n[Dutchie] Fetching Harborside San Jose…");
   const context = await browser.newContext({
     userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
   });
   const page = await context.newPage();
 
-  const rawProducts = [];
+  // Visit the Harborside site first to establish session
+  await page.goto("https://shopharborside.com/stores/san-jose-10th-street/products/flower", {
+    waitUntil: "domcontentloaded",
+    timeout: 60000,
+  });
+  await sleep(4000);
 
-  // Intercept Dutchie GraphQL responses
-  page.on("response", async (res) => {
-    const url = res.url();
-    if (url.includes("dutchie.com") && url.includes("graphql")) {
+  // Execute GraphQL queries from inside the browser context
+  const rawProducts = await page.evaluate(async () => {
+    const GQL_URL = "https://plus.dutchie.com/plus/2021-07/graphql";
+    const SLUG    = "san-jose-10th-street";
+
+    // First introspect to find the right query name
+    const introRes = await fetch(GQL_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Accept": "application/json" },
+      body: JSON.stringify({ query: "{ __schema { queryType { fields { name } } } }" }),
+    });
+    const introJson = await introRes.json();
+    const queryNames = (introJson?.data?.__schema?.queryType?.fields ?? []).map(f => f.name);
+    console.log("Dutchie queries:", queryNames.join(", "));
+
+    // Try queries in order of likelihood
+    const queries = [
+      // retailer slug approach
+      {
+        query: `query($s:String!){filteredProducts(retailerSlug:$s,filter:{category:"Flower"},pagination:{limit:100,offset:0}){products{id name image brand{name} strainType variants{id priceRec option}}totalCount}}`,
+        vars: { s: SLUG },
+        path: d => d?.filteredProducts?.products,
+      },
+      {
+        query: `query($s:String!){menu(retailerSlug:$s){products(filter:{category:"Flower"}){id name image brand{name} strainType variants{id priceRec option}}}}`,
+        vars: { s: SLUG },
+        path: d => d?.menu?.products,
+      },
+      {
+        query: `query($s:String!){retailer(slug:$s){id}}`,
+        vars: { s: SLUG },
+        path: d => null, // just to get retailer ID
+      },
+    ];
+
+    for (const { query, vars, path } of queries) {
       try {
+        const res = await fetch(GQL_URL, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "Origin": "https://shopharborside.com",
+            "Referer": "https://shopharborside.com/",
+          },
+          body: JSON.stringify({ query, variables: vars }),
+        });
         const json = await res.json();
-        // Handle any query shape that contains products
-        const data = json?.data ?? {};
-        const products =
-          data?.filteredProducts?.products ??
-          data?.menu?.products ??
-          data?.products ??
-          data?.retailerMenu?.products ??
-          null;
-        if (products?.length) {
-          rawProducts.push(...products);
-          console.log(`  [Dutchie] +${products.length} products (total: ${rawProducts.length})`);
+        if (json.errors) {
+          console.log("Query errors:", JSON.stringify(json.errors[0]?.message));
+          continue;
         }
-      } catch (_) {}
+        const products = path(json.data);
+        if (products?.length) {
+          console.log("Got products via query:", query.slice(0, 40));
+          return products;
+        }
+      } catch (e) {
+        console.log("Query failed:", e.message);
+      }
     }
+    return [];
   });
 
-  await page.goto(
-    "https://shopharborside.com/stores/san-jose-10th-street/products/flower",
-    { waitUntil: "domcontentloaded", timeout: 60000 }
-  );
-
-  await sleep(5000);
-
-  // Scroll to load all products
-  for (let i = 0; i < 12; i++) {
-    await page.evaluate(() => window.scrollBy(0, 1500));
-    await sleep(1500);
-  }
-
-  await sleep(2000);
   await context.close();
+  console.log(`[Dutchie] ${rawProducts.length} flower products`);
 
-  // Deduplicate
-  const seen = new Set();
-  const unique = rawProducts.filter(p => {
-    const id = String(p.id ?? "");
-    if (!id || seen.has(id)) return false;
-    seen.add(id);
-    return true;
-  });
-
-  console.log(`[Dutchie] ${unique.length} unique flower products`);
-  return unique.flatMap(p => normaliseDutchie(p));
+  return rawProducts.flatMap(p =>
+    (p.variants ?? [{ id: p.id, priceRec: null, option: null }]).map(v => {
+      const weightG = parseWeightGrams(String(v.option ?? ""));
+      return {
+        source:          "harborside-sj",
+        jane_product_id: `dutchie-${p.id}-${v.id ?? v.option ?? "default"}`,
+        product_base_id: `dutchie-${p.id}`,
+        brand:           p.brand?.name ?? "",
+        strain:          p.name ?? "",
+        lineage:         p.strainType ?? "",
+        weight_grams:    weightG,
+        weight_label:    v.option ?? null,
+        price:           v.priceRec ?? null,
+        thc_pct:         null,
+        cbd_pct:         null,
+        product_url:     `https://shopharborside.com/stores/san-jose-10th-street/products/products/${p.id}`,
+        image_url:       p.image ?? null,
+      };
+    })
+  );
 }
 
-// ── Database ───────────────────────────────────────────────────────────────────
+// ── Database — all table names are relative to the flower schema ───────────────
 
 async function upsertProduct(p) {
   const { error } = await supabase
-    .from("flower.products")
+    .from("products")   // no schema prefix — supabase client handles it
     .upsert({
       jane_product_id: p.jane_product_id,
       product_base_id: p.product_base_id,
@@ -252,7 +249,7 @@ async function upsertProduct(p) {
 
 async function logAvailability(janeProductId, isAvailable, price) {
   const { error } = await supabase
-    .from("flower.availability_log")
+    .from("availability_log")
     .insert({
       jane_product_id: janeProductId,
       is_available:    isAvailable,
@@ -266,7 +263,7 @@ async function findRestockedAndNew(products) {
   if (!products.length) return [];
   const ids = products.map(p => p.jane_product_id);
   const { data: existing } = await supabase
-    .from("flower.products")
+    .from("products")
     .select("jane_product_id, is_available")
     .in("jane_product_id", ids);
   const map = new Map((existing ?? []).map(e => [e.jane_product_id, e.is_available]));
@@ -278,14 +275,14 @@ async function findRestockedAndNew(products) {
 
 async function markMissing(seenIds) {
   const { data: current, error } = await supabase
-    .from("flower.products")
+    .from("products")
     .select("jane_product_id, brand, strain, weight_label")
     .eq("is_available", true);
   if (error) { console.error("markMissing error:", error.message); return []; }
   const gone = (current ?? []).filter(p => !seenIds.has(p.jane_product_id));
   for (const p of gone) {
     await supabase
-      .from("flower.products")
+      .from("products")
       .update({ is_available: false, last_seen_at: new Date().toISOString() })
       .eq("jane_product_id", p.jane_product_id);
     await logAvailability(p.jane_product_id, false, null);
@@ -294,24 +291,18 @@ async function markMissing(seenIds) {
   return gone;
 }
 
-// ── Alert ──────────────────────────────────────────────────────────────────────
-
 async function sendAlert(restockedProducts) {
   const { SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, ALERT_TO } = process.env;
   if (!SMTP_HOST || !SMTP_USER || !SMTP_PASS || !ALERT_TO) {
-    console.log("  (email not configured — skipping alert)");
-    return;
+    console.log("  (email not configured — skipping alert)"); return;
   }
-
   const { data: favs } = await supabase
-    .from("flower.favorites")
+    .from("favorites")
     .select("product_base_id")
     .eq("type", "product")
     .eq("alert_enabled", true);
-
   if (!favs?.length) { console.log("  (no alert favorites set)"); return; }
-
-  const favIds    = new Set(favs.map(f => f.product_base_id).filter(Boolean));
+  const favIds     = new Set(favs.map(f => f.product_base_id).filter(Boolean));
   const alertItems = restockedProducts.filter(p => favIds.has(p.product_base_id));
   if (!alertItems.length) { console.log("  No favorited products restocked."); return; }
 
@@ -320,7 +311,6 @@ async function sendAlert(restockedProducts) {
     secure: parseInt(SMTP_PORT || "587") === 465,
     auth: { user: SMTP_USER, pass: SMTP_PASS },
   });
-
   const storeLabel = { "cakehouse-sj": "Cake House SJ", "harborside-sj": "Harborside SJ" };
   let html = `<h2>🌿 FreshFlower — Favorited Products Back In Stock</h2><ul>`;
   for (const p of alertItems) {
@@ -331,7 +321,6 @@ async function sendAlert(restockedProducts) {
     html += `</li>`;
   }
   html += `</ul>`;
-
   await transporter.sendMail({
     from: `"FreshFlower" <${SMTP_USER}>`, to: ALERT_TO,
     subject: `🌿 ${alertItems.length} favorited product${alertItems.length !== 1 ? "s" : ""} back in stock`,
@@ -344,13 +333,10 @@ async function sendAlert(restockedProducts) {
 
 async function main() {
   console.log(`\n🌿 FreshFlower scrape — ${new Date().toISOString()}`);
-
   const browser = await chromium.launch({ headless: true });
-
   try {
     const janeProducts    = await scrapeJane(browser);
     const dutchieProducts = await scrapeDutchie(browser);
-
     const all = [...janeProducts, ...dutchieProducts];
     console.log(`\n  ${all.length} total variants across both stores`);
 
@@ -362,14 +348,11 @@ async function main() {
       await upsertProduct(p);
       await logAvailability(p.jane_product_id, true, p.price);
     }
-
     await markMissing(seenIds);
     await sendAlert(restockedAndNew);
-
   } finally {
     await browser.close();
   }
-
   console.log("\n✅ Done.\n");
 }
 
