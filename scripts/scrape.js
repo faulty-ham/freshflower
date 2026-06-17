@@ -1,5 +1,5 @@
 // scrape.js — FreshFlower multi-dispensary tracker
-// Scrapes rendered DOM since both sites load products via client-side JS.
+// Parses product data directly from rendered DOM elements.
 
 import { createClient } from "@supabase/supabase-js";
 import nodemailer from "nodemailer";
@@ -32,145 +32,145 @@ function parseWeightGrams(option = "") {
   return null;
 }
 
-// ── ① Cake House San Jose — DOM scraping ──────────────────────────────────────
+// ── ① Cake House San Jose — parse product links from Jane DOM ─────────────────
 
 async function scrapeJane(browser) {
-  console.log("\n[Jane] Scraping Cake House San Jose (store 6524)…");
+  console.log("\n[Jane] Scraping Cake House San Jose…");
   const context = await browser.newContext({
     userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
   });
   const page = await context.newPage();
-
-  // Also intercept — belt and suspenders approach
-  const rawFromNetwork = [];
-  page.on("response", async (response) => {
-    const url = response.url();
-    if (url.includes("iheartjane.com") && url.includes("search/products")) {
-      try {
-        const json = await response.json();
-        const items = json?.data ?? json?.products ?? json?.hits ?? [];
-        if (items.length) {
-          rawFromNetwork.push(...items);
-          console.log(`  [Jane/net] +${items.length}`);
-        }
-      } catch (_) {}
-    }
-  });
 
   await page.goto(
     "https://www.iheartjane.com/stores/6524/the-cake-house-san-jose/menu/flower",
     { waitUntil: "domcontentloaded", timeout: 60000 }
   );
 
-  // Wait for product cards to appear in the DOM
-  console.log("  [Jane] Waiting for product cards…");
-  try {
-    await page.waitForSelector('[data-testid="product-card"], .product-card, [class*="ProductCard"], [class*="product-card"]', { timeout: 20000 });
-    console.log("  [Jane] Product cards found in DOM");
-  } catch (_) {
-    console.log("  [Jane] No product card selector matched, waiting longer…");
-    await sleep(8000);
-  }
+  // Wait for product cards
+  await page.waitForSelector('a[href*="/products/"]', { timeout: 20000 });
+  await sleep(3000);
 
-  // Scroll to load all products
-  let lastCount = 0;
-  for (let i = 0; i < 20; i++) {
+  // Scroll until no new products appear
+  let prevCount = 0;
+  let stableRounds = 0;
+  for (let i = 0; i < 30; i++) {
     await page.evaluate(() => window.scrollBy(0, 1200));
-    await sleep(800);
+    await sleep(700);
     const count = await page.evaluate(() =>
       document.querySelectorAll('a[href*="/products/"]').length
     );
-    if (i % 5 === 0) console.log(`  [Jane] Product links visible: ${count}`);
-    if (count > 0 && count === lastCount && i > 8) break;
-    lastCount = count;
+    if (count === prevCount) {
+      stableRounds++;
+      if (stableRounds >= 4) break; // stable for 4 rounds = done loading
+    } else {
+      stableRounds = 0;
+      prevCount = count;
+    }
+    if (i % 5 === 0) console.log(`  [Jane] ${count} product links visible`);
   }
-  await sleep(2000);
+  await sleep(1000);
 
-  // Extract data from the page's JS state (window.__store__ or similar)
-  // and also from window.__JANE_DATA__ or React component props
-  const extracted = await page.evaluate(() => {
-    // Try to find Jane's data in window globals
-    const janeKeys = Object.keys(window).filter(k =>
-      k.toLowerCase().includes('jane') ||
-      k.toLowerCase().includes('store') ||
-      k.toLowerCase().includes('redux') ||
-      k.toLowerCase().includes('__data')
-    );
+  // Extract all product data from the DOM
+  const products = await page.evaluate(() => {
+    const links = Array.from(document.querySelectorAll('a[href*="/products/"]'));
+    const results = [];
 
-    // Try React fiber / Redux store
-    const root = document.getElementById('root') || document.getElementById('__next');
-    let fiberData = null;
-    if (root) {
-      const fiberKey = Object.keys(root).find(k => k.startsWith('__reactFiber') || k.startsWith('__reactInternalInstance'));
-      if (fiberKey) {
-        // Walk fiber tree looking for products array
-        function walkFiber(node, depth = 0) {
-          if (!node || depth > 30) return null;
-          const props = node.memoizedProps || node.pendingProps || {};
-          if (props?.products?.length > 0) return props.products;
-          if (props?.items?.length > 0 && props.items[0]?.brand) return props.items;
-          const fromChild = walkFiber(node.child, depth + 1);
-          if (fromChild) return fromChild;
-          const fromSibling = walkFiber(node.sibling, depth + 1);
-          if (fromSibling) return fromSibling;
-          return null;
-        }
-        fiberData = walkFiber(root[fiberKey]);
-      }
+    for (const link of links) {
+      const href = link.href;
+      // URL pattern: /stores/6524/.../products/{id}/{slug}
+      const match = href.match(/\/products\/(\d+)\/([^/?#]+)/);
+      if (!match) continue;
+      const productId = match[1];
+      const slug      = match[2];
+
+      // The full text content of the card contains all info
+      const text = link.textContent?.trim() ?? "";
+
+      // Extract lineage (first word if it's a known type)
+      const lineageMatch = text.match(/^(Indica|Sativa|Hybrid|CBD|CBN)/i);
+      const lineage = lineageMatch ? lineageMatch[1] : "";
+
+      // Extract strain name and brand — they appear after lineage
+      // Format: "Lineage\nStrain\nBrand\nFlower\n(Weight)..."
+      const lines = text.split(/\n|\r/).map(l => l.trim()).filter(Boolean);
+
+      // Find weight — looks like "(3.5G)" or "(1oz)"
+      const weightLine = lines.find(l => /^\([\d.]+\s*[gGoO]/.test(l) || /^\([\w\s/]+oz/i.test(l));
+      const weightStr  = weightLine ? weightLine.replace(/[()]/g, "").trim() : null;
+
+      // Find price — looks like "$19.99" or "$11.99/3.5g"
+      const priceLine  = lines.find(l => /^\$[\d.]+/.test(l));
+      const priceMatch = priceLine?.match(/\$([\d.]+)$/);  // last price = sale price
+      const allPrices  = [...(priceLine?.matchAll(/\$([\d.]+)/g) ?? [])];
+      const price      = allPrices.length > 0
+        ? parseFloat(allPrices[allPrices.length - 1][1])  // last = current price
+        : null;
+
+      // THC %
+      const thcMatch  = text.match(/THC\s*([\d.]+)%/i);
+      const thc       = thcMatch ? parseFloat(thcMatch[1]) : null;
+
+      // Extract image
+      const img = link.querySelector('img');
+      const imageUrl = img?.src ?? null;
+
+      // Find strain and brand from lines (skip lineage, weight, price, THC/CBD lines)
+      const skipPatterns = [/^(Indica|Sativa|Hybrid|CBD|CBN)$/i, /THC|CBD/, /^\$/, /^\(/, /^Flower$/i, /^Pre-roll$/i];
+      const nameParts = lines.filter(l => !skipPatterns.some(p => p.test(l)));
+
+      results.push({
+        id:        productId,
+        slug,
+        href,
+        lineage,
+        weight:    weightStr,
+        price,
+        thc,
+        imageUrl,
+        nameParts,
+        rawText:   text.slice(0, 200),
+      });
     }
 
-    // Also grab product links and names from DOM as fallback
-    const productLinks = Array.from(document.querySelectorAll('a[href*="/products/"]')).map(a => ({
-      href: a.href,
-      text: a.textContent?.trim().slice(0, 100),
-    })).filter(l => l.href.includes('/products/'));
-
-    return { janeKeys, fiberData, productLinks: productLinks.slice(0, 5), url: window.location.href };
+    return results;
   });
 
-  console.log(`  [Jane] Window keys: ${extracted.janeKeys?.slice(0, 10).join(', ')}`);
-  console.log(`  [Jane] Fiber products: ${extracted.fiberData?.length ?? 'none'}`);
-  console.log(`  [Jane] Product links found: ${extracted.productLinks?.length}`);
-  console.log(`  [Jane] Sample links: ${JSON.stringify(extracted.productLinks?.slice(0, 2))}`);
-  console.log(`  [Jane] Current URL: ${extracted.url}`);
-  console.log(`  [Jane] Network captured: ${rawFromNetwork.length}`);
+  console.log(`[Jane] ${products.length} products extracted from DOM`);
+  if (products.length > 0) {
+    console.log("  [Jane] Sample:", JSON.stringify(products[0]).slice(0, 200));
+  }
 
   await context.close();
 
-  if (rawFromNetwork.length > 0) {
-    console.log(`[Jane] Using ${rawFromNetwork.length} network-captured products`);
-    const seen = new Set();
-    return rawFromNetwork.filter(p => {
-      const id = String(p.id ?? p.product_id ?? "");
-      if (!id || seen.has(id)) return false;
-      seen.add(id); return true;
-    }).flatMap(p => {
-      const variants = Array.isArray(p.prices) && p.prices.length
-        ? p.prices : [{ option: null, price: p.price }];
-      return variants.map(v => {
-        const option  = v.weight ?? v.option ?? v.label ?? null;
-        const weightG = parseWeightGrams(String(option ?? ""));
-        const price   = (v.price ?? v.priceRec) != null ? (v.price ?? v.priceRec) / 100 : null;
-        return {
-          source: "cakehouse-sj",
-          jane_product_id: `jane-${p.id ?? p.product_id}-${option ?? "default"}`,
-          product_base_id: String(p.id ?? p.product_id ?? ""),
-          brand: p.brand ?? p.brand_name ?? "", strain: p.name ?? p.product_name ?? "",
-          lineage: p.kind ?? p.lineage ?? "", weight_grams: weightG,
-          weight_label: option, price, thc_pct: p.percent_thc ?? null,
-          cbd_pct: p.percent_cbd ?? null,
-          product_url: `https://www.iheartjane.com/stores/6524/the-cake-house-san-jose/menu/products/${p.id}/${p.slug ?? ""}`,
-          image_url: p.image ?? p.photo ?? null,
-        };
-      });
-    });
-  }
-
-  console.log("[Jane] 0 products — check logs above for debugging info");
-  return [];
+  // Deduplicate by product ID
+  const seen = new Set();
+  return products.filter(p => {
+    if (seen.has(p.id)) return false;
+    seen.add(p.id); return true;
+  }).map(p => {
+    // nameParts[0] = strain, nameParts[1] = brand (typical Jane layout)
+    const strain = p.nameParts[0] ?? p.slug.replace(/-/g, " ");
+    const brand  = p.nameParts[1] ?? "";
+    const weightG = parseWeightGrams(p.weight);
+    return {
+      source:          "cakehouse-sj",
+      jane_product_id: `jane-${p.id}-${p.weight ?? "default"}`,
+      product_base_id: p.id,
+      brand,
+      strain,
+      lineage:         p.lineage,
+      weight_grams:    weightG,
+      weight_label:    p.weight,
+      price:           p.price,
+      thc_pct:         p.thc,
+      cbd_pct:         null,
+      product_url:     p.href,
+      image_url:       p.imageUrl,
+    };
+  });
 }
 
-// ── ② Harborside San Jose — DOM scraping ──────────────────────────────────────
+// ── ② Harborside San Jose — wait longer for Dutchie to hydrate ────────────────
 
 async function scrapeDutchie(browser) {
   console.log("\n[Dutchie] Scraping Harborside San Jose…");
@@ -201,96 +201,85 @@ async function scrapeDutchie(browser) {
 
   await page.goto(
     "https://shopharborside.com/stores/san-jose-10th-street/products/flower",
-    { waitUntil: "domcontentloaded", timeout: 60000 }
+    { waitUntil: "networkidle", timeout: 90000 }
   );
 
-  console.log("  [Dutchie] Waiting for products…");
-  try {
-    await page.waitForSelector('[class*="product"], [data-testid*="product"], article, .menu-item', { timeout: 20000 });
-    console.log("  [Dutchie] Product elements found");
-  } catch (_) {
-    console.log("  [Dutchie] No product selector matched, waiting longer…");
-    await sleep(8000);
-  }
+  await sleep(5000);
 
-  let lastCount = 0;
-  for (let i = 0; i < 20; i++) {
-    await page.evaluate(() => window.scrollBy(0, 1200));
-    await sleep(800);
-    const count = await page.evaluate(() =>
-      document.querySelectorAll('a[href*="/products/"]').length
+  // Try to find product cards — Dutchie renders as article or div elements
+  const products = await page.evaluate(() => {
+    // Look for any element with product-like data attributes or class names
+    const allLinks = Array.from(document.querySelectorAll('a[href*="/products/"]'));
+    const productLinks = allLinks.filter(a =>
+      !a.href.includes('/products/flower') &&
+      !a.href.includes('/products/vape') &&
+      a.href.match(/\/products\/[^/]+$/)
     );
-    if (i % 5 === 0) console.log(`  [Dutchie] Product links visible: ${count}`);
-    if (count > 0 && count === lastCount && i > 8) break;
-    lastCount = count;
+
+    return productLinks.map(a => {
+      const text   = a.textContent?.trim() ?? "";
+      const href   = a.href;
+      const idMatch = href.match(/\/([^/]+)$/);
+      return {
+        id:   idMatch?.[1] ?? href,
+        href,
+        text: text.slice(0, 300),
+      };
+    }).slice(0, 5); // just sample first 5 for debugging
+  });
+
+  const linkCount = await page.evaluate(() =>
+    document.querySelectorAll('a[href*="/products/"]').length
+  );
+
+  console.log(`  [Dutchie] Total product links: ${linkCount}`);
+  console.log(`  [Dutchie] Sample products: ${JSON.stringify(products)}`);
+  console.log(`  [Dutchie] Network captured: ${rawFromNetwork.length}`);
+
+  // Scroll and check again
+  for (let i = 0; i < 10; i++) {
+    await page.evaluate(() => window.scrollBy(0, 1200));
+    await sleep(1000);
   }
   await sleep(2000);
 
-  // Extract from React state
-  const extracted = await page.evaluate(() => {
-    const root = document.getElementById('__next') || document.getElementById('root');
-    let fiberProducts = null;
-    if (root) {
-      const fiberKey = Object.keys(root).find(k => k.startsWith('__reactFiber') || k.startsWith('__reactInternalInstance'));
-      if (fiberKey) {
-        function walkFiber(node, depth = 0) {
-          if (!node || depth > 40) return null;
-          const props = node.memoizedProps || node.pendingProps || {};
-          if (Array.isArray(props?.products) && props.products.length > 0 && props.products[0]?.id) return props.products;
-          if (Array.isArray(props?.items) && props.items.length > 0 && props.items[0]?.brand) return props.items;
-          const s = node.memoizedState;
-          if (s?.memoizedState?.products?.length > 0) return s.memoizedState.products;
-          return walkFiber(node.child, depth + 1) ?? walkFiber(node.sibling, depth + 1);
-        }
-        fiberProducts = walkFiber(root[fiberKey]);
-      }
-    }
-    const productLinks = Array.from(document.querySelectorAll('a[href*="/products/"]')).map(a => ({
-      href: a.href, text: a.textContent?.trim().slice(0, 80),
-    })).filter(l => l.href.includes('/products/')).slice(0, 5);
-
-    return { fiberProducts, productLinks, url: window.location.href };
-  });
-
-  console.log(`  [Dutchie] Fiber products: ${extracted.fiberProducts?.length ?? 'none'}`);
-  console.log(`  [Dutchie] Product links: ${extracted.productLinks?.length}`);
-  console.log(`  [Dutchie] Sample: ${JSON.stringify(extracted.productLinks?.slice(0, 2))}`);
-  console.log(`  [Dutchie] Network captured: ${rawFromNetwork.length}`);
+  const finalCount = await page.evaluate(() =>
+    document.querySelectorAll('a[href*="/products/"]').length
+  );
+  console.log(`  [Dutchie] After scroll: ${finalCount} product links`);
 
   await context.close();
 
-  const rawProducts = rawFromNetwork.length > 0
-    ? rawFromNetwork
-    : (extracted.fiberProducts ?? []);
-
-  if (!rawProducts.length) {
-    console.log("[Dutchie] 0 products — check logs above");
+  if (rawFromNetwork.length === 0 && finalCount === 0) {
+    console.log("[Dutchie] 0 products");
     return [];
   }
 
-  const seen = new Set();
-  const unique = rawProducts.filter(p => {
-    const id = String(p.id ?? "");
-    if (!id || seen.has(id)) return false;
-    seen.add(id); return true;
-  });
-  console.log(`[Dutchie] ${unique.length} unique products`);
+  // Process network results if available
+  if (rawFromNetwork.length > 0) {
+    const seen = new Set();
+    return rawFromNetwork.filter(p => {
+      const id = String(p.id ?? "");
+      if (!id || seen.has(id)) return false;
+      seen.add(id); return true;
+    }).flatMap(p =>
+      (p.variants ?? [{ id: p.id, priceRec: null, option: null }]).map(v => {
+        const weightG = parseWeightGrams(String(v.option ?? ""));
+        return {
+          source: "harborside-sj",
+          jane_product_id: `dutchie-${p.id}-${v.id ?? v.option ?? "default"}`,
+          product_base_id: `dutchie-${p.id}`,
+          brand: p.brand?.name ?? "", strain: p.name ?? "", lineage: p.strainType ?? "",
+          weight_grams: weightG, weight_label: v.option ?? null, price: v.priceRec ?? null,
+          thc_pct: null, cbd_pct: null,
+          product_url: `https://shopharborside.com/stores/san-jose-10th-street/products/products/${p.id}`,
+          image_url: p.image ?? null,
+        };
+      })
+    );
+  }
 
-  return unique.flatMap(p =>
-    (p.variants ?? [{ id: p.id, priceRec: null, option: null }]).map(v => {
-      const weightG = parseWeightGrams(String(v.option ?? ""));
-      return {
-        source: "harborside-sj",
-        jane_product_id: `dutchie-${p.id}-${v.id ?? v.option ?? "default"}`,
-        product_base_id: `dutchie-${p.id}`,
-        brand: p.brand?.name ?? "", strain: p.name ?? "", lineage: p.strainType ?? "",
-        weight_grams: weightG, weight_label: v.option ?? null, price: v.priceRec ?? null,
-        thc_pct: null, cbd_pct: null,
-        product_url: `https://shopharborside.com/stores/san-jose-10th-street/products/products/${p.id}`,
-        image_url: p.image ?? null,
-      };
-    })
-  );
+  return [];
 }
 
 // ── Database ───────────────────────────────────────────────────────────────────
