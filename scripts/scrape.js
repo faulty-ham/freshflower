@@ -121,32 +121,15 @@ function extractJaneCards() {
     const img = link.querySelector('img');
     const imageUrl = img?.src ?? null;
 
-    // Brand/strain: scan backward from the price/weight line (or the CTA button
-    // if no price line matched) and take the nearest two lines that aren't
-
-    // discount badges, "Sponsored"/rating noise, lineage+type lines, THC/CBD,
-    // or another price line. Nearest = brand, next-nearest = strain — this
-    // matches the card layout: Title / Type / [Sponsored] / Title / Brand / ...
-    const noisePatterns = [
-      /^\d+%\s*off$/i, /^sponsored$/i, /^[\d.]+\s*\(\d+\)$/,
-      /^(indica|sativa|hybrid|cbd|cbn)(\s*flower)?$/i,
-      /^flower$/i,
-      /^(select weight|add to bag)$/i,
-      /THC/i, /CBD/i, /^\$/,
-    ];
-    let anchorIdx = lines.findIndex(l => /\$[\d,.]+\s*\/\s*[\d.]+\s*(g|oz)/i.test(l));
-    if (anchorIdx === -1) {
-      anchorIdx = lines.findIndex(l => /^(select weight|add to bag)$/i.test(l));
-    }
-    const nameParts = [];
-    if (anchorIdx > 0) {
-      for (let k = anchorIdx - 1; k >= 0 && nameParts.length < 2; k--) {
-        const l = lines[k];
-        if (!l || noisePatterns.some(p => p.test(l))) continue;
-        nameParts.push(l);
-      }
-    }
-    // nameParts[0] = brand (nearest to price), nameParts[1] = strain (dup title line)
+    // Brand/strain: real DOM structure (confirmed via debug logging against live
+    // data) is simply [lineage?, strain, brand, ...packaging/price/THC noise].
+    // Lineage badge is optional — when present it's always first.
+    const lineageWords = new Set(["indica", "sativa", "hybrid", "cbd", "cbn"]);
+    const startIdx = (lines[0] && lineageWords.has(lines[0].toLowerCase())) ? 1 : 0;
+    const strainVal = lines[startIdx] ?? "";
+    const brandVal  = lines[startIdx + 1] ?? "";
+    const nameParts = [brandVal, strainVal];
+    // nameParts[0] = brand, nameParts[1] = strain
 
     results.push({
       id:        productId,
