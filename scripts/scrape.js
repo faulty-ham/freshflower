@@ -12,6 +12,27 @@ const supabase = createClient(
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
+// Only these brands get scraped/stored for Cake House. Matching is case-insensitive
+// and fuzzy (substring either direction), so "CAM" matches "CAM Private Reserve" and
+// "UpNorth" matches "UpNorth Humboldt" without needing exact spelling.
+const FAVORITE_BRANDS = [
+  "A Golden State",
+  "Blueprint",
+  "CAM Private Reserve",
+  "Cream of the Crop",
+  "Fig Farms",
+  "Green Dragon",
+  "Lumpy's",
+  "No Till Kings",
+  "Pure Beauty",
+  "Snowtill",
+  "Team Elite Genetics",
+  "Top Shelf Cultivation",
+  "Wizard Trees",
+  "UpNorth",
+  "Wonderbrett",
+];
+
 function parseWeightGrams(option = "") {
   if (!option) return null;
   const s = option.toLowerCase().trim();
@@ -142,18 +163,57 @@ async function scrapeJane(browser) {
 
   mergeBatch(await page.evaluate(extractJaneCards));
 
-  const viewportHeight = await page.evaluate(() => window.innerHeight);
-  const step = Math.round(viewportHeight * 0.6);
-  let maxScroll = await page.evaluate(() => document.scrollingElement.scrollHeight);
+  // The product grid may scroll inside its own nested container rather than the
+  // page itself (common with virtualized lists) \u2014 scrolling the page in that case
+  // does little or nothing, which is the likely cause of premature plateaus.
+  // Detect the real scrollable container: the overflow:auto/scroll element that
+  // actually contains the most product links, falling back to the page itself.
+  const scrollInfo = await page.evaluate(() => {
+    const candidates = Array.from(document.querySelectorAll("*")).filter(el => {
+      const cs = getComputedStyle(el);
+      return (cs.overflowY === "auto" || cs.overflowY === "scroll") &&
+             el.scrollHeight > el.clientHeight + 50;
+    });
+    let bestIdx = -1, bestCount = 0;
+    candidates.forEach((el, i) => {
+      const count = el.querySelectorAll('a[href*="/products/"]').length;
+      if (count > bestCount) { bestCount = count; bestIdx = i; }
+    });
+    if (bestIdx === -1) return { usesContainer: false };
+    const el = candidates[bestIdx];
+    el.setAttribute("data-ff-scroll-target", "1");
+    return { usesContainer: true, productCount: bestCount, scrollHeight: el.scrollHeight, clientHeight: el.clientHeight };
+  });
+  console.log(`  [Jane] scroll target: ${scrollInfo.usesContainer ? `nested container (${scrollInfo.productCount} links, ${scrollInfo.scrollHeight}px)` : "page (no nested scroll container found)"}`);
+
+  const viewportHeight = scrollInfo.usesContainer ? scrollInfo.clientHeight : await page.evaluate(() => window.innerHeight);
+  const step = Math.max(200, Math.round(viewportHeight * 0.6));
+  let maxScroll = scrollInfo.usesContainer ? scrollInfo.scrollHeight : await page.evaluate(() => document.scrollingElement.scrollHeight);
   let pos = 0;
   let iterations = 0;
-  const maxIterations = 250;
+  const maxIterations = 400;
+
+  const scrollTo = async (y) => {
+    if (scrollInfo.usesContainer) {
+      await page.evaluate((y) => {
+        document.querySelector('[data-ff-scroll-target="1"]').scrollTop = y;
+      }, y);
+    } else {
+      await page.evaluate((y) => window.scrollTo(0, y), y);
+    }
+  };
+  const currentMaxScroll = async () => {
+    if (scrollInfo.usesContainer) {
+      return page.evaluate(() => document.querySelector('[data-ff-scroll-target="1"]').scrollHeight);
+    }
+    return page.evaluate(() => document.scrollingElement.scrollHeight);
+  };
 
   while (pos <= maxScroll && iterations < maxIterations) {
-    await page.evaluate((y) => window.scrollTo(0, y), pos);
-    await sleep(600);
+    await scrollTo(pos);
+    await sleep(500);
     mergeBatch(await page.evaluate(extractJaneCards));
-    maxScroll = Math.max(maxScroll, await page.evaluate(() => document.scrollingElement.scrollHeight));
+    maxScroll = Math.max(maxScroll, await currentMaxScroll());
     pos += step;
     iterations++;
     if (iterations % 15 === 0) console.log(`  [Jane] step ${iterations}, ${collected.size} unique so far`);
@@ -167,7 +227,23 @@ async function scrapeJane(browser) {
 
   await context.close();
 
-  return products.map(p => {
+  // Only keep favorite brands \u2014 fuzzy, case-insensitive, substring-in-either-direction
+  // match (so "CAM" matches "CAM Private Reserve", "UpNorth" matches "UpNorth Humboldt").
+  const norm = s => (s ?? "").toLowerCase().trim();
+  const favBrandsNorm = FAVORITE_BRANDS.map(norm);
+  const matchesFavoriteBrand = brand => {
+    const b = norm(brand);
+    if (!b) return false;
+    return favBrandsNorm.some(fav => b.includes(fav) || fav.includes(b));
+  };
+
+  const filtered = products.filter(p => {
+    const brand = p.nameParts[0] ?? "";
+    return matchesFavoriteBrand(brand);
+  });
+  console.log(`[Jane] ${filtered.length} of ${products.length} match favorite brands`);
+
+  return filtered.map(p => {
     const brand  = p.nameParts[0] ?? "";
     const strain = p.nameParts[1] ?? p.slug.replace(/-/g, " ");
     const weightG = parseWeightGrams(p.weight);
