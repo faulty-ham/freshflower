@@ -269,10 +269,13 @@ const NEW_DAYS      = 3;   // products first seen within N days show "New" badge
 
 const API = (path, opts = {}) => fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
   headers: {
-    "apikey":        SUPABASE_ANON,
-    "Authorization": `Bearer ${SUPABASE_ANON}`,
-    "Content-Type":  "application/json",
-    "Prefer":        "return=representation",
+    "apikey":          SUPABASE_ANON,
+    "Authorization":   `Bearer ${SUPABASE_ANON}`,
+    "Content-Type":    "application/json",
+    // Non-public schemas are selected via headers, not a "schema.table" URL path.
+    "Accept-Profile":  "flower",
+    "Content-Profile": "flower",
+    "Prefer":          "return=representation",
     ...opts.headers,
   },
   ...opts,
@@ -296,7 +299,7 @@ let sortBy         = "fav-first";
 
 async function fetchProducts() {
   const res = await API(
-    `flower.products?is_available=eq.true&weight_grams=gte.${MIN_WEIGHT_G}` +
+    `products?is_available=eq.true&weight_grams=gte.${MIN_WEIGHT_G}` +
     `&select=jane_product_id,product_base_id,source,brand,strain,lineage,` +
     `weight_grams,weight_label,price,thc_pct,product_url,image_url,first_seen_at` +
     `&order=brand.asc,strain.asc,weight_grams.asc`
@@ -306,7 +309,7 @@ async function fetchProducts() {
 }
 
 async function fetchFavorites() {
-  const res = await API(`flower.favorites?select=*`);
+  const res = await API(`favorites?select=*`);
   if (!res.ok) throw new Error(`Favorites fetch failed: ${res.status}`);
   return res.json();
 }
@@ -333,14 +336,14 @@ async function toggleBrandFav(brand) {
     // Remove
     const row = favData.find(r => r.type === "brand" && r.brand?.toLowerCase() === key);
     if (row) {
-      await API(`flower.favorites?id=eq.${row.id}`, { method: "DELETE" });
+      await API(`favorites?id=eq.${row.id}`, { method: "DELETE" });
       favBrands.delete(key);
       favData = favData.filter(r => r.id !== row.id);
       showToast(`Removed ${brand} from favorites`);
     }
   } else {
     // Add
-    const res = await API(`flower.favorites`, {
+    const res = await API(`favorites`, {
       method: "POST",
       body: JSON.stringify({ type: "brand", brand, alert_enabled: false }),
     });
@@ -359,14 +362,14 @@ async function toggleProductFav(product_base_id, brand, strain) {
   if (favProducts.has(product_base_id)) {
     const row = favData.find(r => r.type === "product" && r.product_base_id === product_base_id);
     if (row) {
-      await API(`flower.favorites?id=eq.${row.id}`, { method: "DELETE" });
+      await API(`favorites?id=eq.${row.id}`, { method: "DELETE" });
       favProducts.delete(product_base_id);
       favAlerts.delete(product_base_id);
       favData = favData.filter(r => r.id !== row.id);
       showToast(`Removed ${strain} from favorites`);
     }
   } else {
-    const res = await API(`flower.favorites`, {
+    const res = await API(`favorites`, {
       method: "POST",
       body: JSON.stringify({ type: "product", brand, strain, product_base_id, alert_enabled: true }),
     });
@@ -385,7 +388,7 @@ async function toggleProductAlert(product_base_id) {
   const row = favData.find(r => r.type === "product" && r.product_base_id === product_base_id);
   if (!row) return;
   const newVal = !row.alert_enabled;
-  const res = await API(`flower.favorites?id=eq.${row.id}`, {
+  const res = await API(`favorites?id=eq.${row.id}`, {
     method:  "PATCH",
     body:    JSON.stringify({ alert_enabled: newVal }),
   });
