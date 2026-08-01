@@ -33,8 +33,62 @@ function parseWeightGrams(option = "") {
 
 // ── ① Cake House San Jose — parse product links from Jane DOM ─────────────────
 
+// Extraction logic run inside the page at each scroll checkpoint.
+function extractJaneCards() {
+  const links = Array.from(document.querySelectorAll('a[href*="/products/"]'));
+  const results = [];
+
+  for (const link of links) {
+    const href = link.href;
+    const match = href.match(/\/products\/(\d+)\/([^/?#]+)/);
+    if (!match) continue;
+    const productId = match[1];
+    const slug      = match[2];
+
+    const text = link.textContent?.trim() ?? "";
+
+    const lineageMatch = text.match(/^(Indica|Sativa|Hybrid|CBD|CBN)/i);
+    const lineage = lineageMatch ? lineageMatch[1] : "";
+
+    const lines = text.split(/\n|\r/).map(l => l.trim()).filter(Boolean);
+
+    const weightMatch = text.match(/\(([\d.]+\s*[gG](?:rams?)?)\)/i) ??
+                text.match(/\(([\d./]+\s*(?:oz|ounce)s?)\)/i);
+    const weightStr   = weightMatch ? weightMatch[1].trim() : null;
+
+    const allPrices = [...text.matchAll(/\$([\d.]+)/g)];
+    const price     = allPrices.length > 0
+      ? parseFloat(allPrices[allPrices.length - 1][1])
+      : null;
+
+    const thcMatch  = text.match(/THC\s*([\d.]+)%/i);
+    const thc       = thcMatch ? parseFloat(thcMatch[1]) : null;
+
+    const img = link.querySelector('img');
+    const imageUrl = img?.src ?? null;
+
+    const skipPatterns = [/^(Indica|Sativa|Hybrid|CBD|CBN)$/i, /THC|CBD/, /^\$/, /^\(/, /^Flower$/i, /^Pre-roll$/i];
+    const nameParts = lines.filter(l => !skipPatterns.some(p => p.test(l)));
+
+    results.push({
+      id:        productId,
+      slug,
+      href,
+      lineage,
+      weight:    weightStr,
+      price,
+      thc,
+      imageUrl,
+      nameParts,
+      rawText:   text.slice(0, 200),
+    });
+  }
+
+  return results;
+}
+
 async function scrapeJane(browser) {
-  console.log("\n[Jane] Scraping Cake House San Jose…");
+  console.log("\n[Jane] Scraping Cake House San Jose\u2026");
   const context = await browser.newContext({
     userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
   });
@@ -45,108 +99,45 @@ async function scrapeJane(browser) {
     { waitUntil: "domcontentloaded", timeout: 60000 }
   );
 
-  // Wait for product cards
   await page.waitForSelector('a[href*="/products/"]', { timeout: 20000 });
   await sleep(3000);
 
-  // Scroll until no new products appear
-  let prevCount = 0;
-  let stableRounds = 0;
-  for (let i = 0; i < 30; i++) {
-    await page.evaluate(() => window.scrollBy(0, 1200));
-    await sleep(700);
-    const count = await page.evaluate(() =>
-      document.querySelectorAll('a[href*="/products/"]').length
-    );
-    if (count === prevCount) {
-      stableRounds++;
-      if (stableRounds >= 4) break; // stable for 4 rounds = done loading
-    } else {
-      stableRounds = 0;
-      prevCount = count;
-    }
-    if (i % 5 === 0) console.log(`  [Jane] ${count} product links visible`);
+  // The list is virtualized \u2014 cards scrolled out of view get removed from the DOM
+  // entirely, not just hidden. So we extract at EVERY scroll checkpoint and merge
+  // by product id, rather than waiting for a final "stable" render and grabbing once.
+  const collected = new Map();
+  function mergeBatch(batch) {
+    for (const item of batch) collected.set(item.id, item);
   }
-  await sleep(1000);
 
-  // Extract all product data from the DOM
-  const products = await page.evaluate(() => {
-    const links = Array.from(document.querySelectorAll('a[href*="/products/"]'));
-    const results = [];
+  mergeBatch(await page.evaluate(extractJaneCards));
 
-    for (const link of links) {
-      const href = link.href;
-      // URL pattern: /stores/6524/.../products/{id}/{slug}
-      const match = href.match(/\/products\/(\d+)\/([^/?#]+)/);
-      if (!match) continue;
-      const productId = match[1];
-      const slug      = match[2];
+  const viewportHeight = await page.evaluate(() => window.innerHeight);
+  const step = Math.round(viewportHeight * 0.6);
+  let maxScroll = await page.evaluate(() => document.scrollingElement.scrollHeight);
+  let pos = 0;
+  let iterations = 0;
+  const maxIterations = 250;
 
-      // The full text content of the card contains all info
-      const text = link.textContent?.trim() ?? "";
+  while (pos <= maxScroll && iterations < maxIterations) {
+    await page.evaluate((y) => window.scrollTo(0, y), pos);
+    await sleep(600);
+    mergeBatch(await page.evaluate(extractJaneCards));
+    maxScroll = Math.max(maxScroll, await page.evaluate(() => document.scrollingElement.scrollHeight));
+    pos += step;
+    iterations++;
+    if (iterations % 15 === 0) console.log(`  [Jane] step ${iterations}, ${collected.size} unique so far`);
+  }
 
-      // Extract lineage (first word if it's a known type)
-      const lineageMatch = text.match(/^(Indica|Sativa|Hybrid|CBD|CBN)/i);
-      const lineage = lineageMatch ? lineageMatch[1] : "";
-
-      // Extract strain name and brand — they appear after lineage
-      // Format: "Lineage\nStrain\nBrand\nFlower\n(Weight)..."
-      const lines = text.split(/\n|\r/).map(l => l.trim()).filter(Boolean);
-
-      // Find weight — looks like "(3.5G)" or "(1oz)"
-		const weightMatch = text.match(/\(([\d.]+\s*[gG](?:rams?)?)\)/i) ??
-                    text.match(/\(([\d./]+\s*(?:oz|ounce)s?)\)/i);
-		const weightStr   = weightMatch ? weightMatch[1].trim() : null;
-
-      // Find price — looks like "$19.99" or "$11.99/3.5g"
-	const allPrices = [...text.matchAll(/\$([\d.]+)/g)];
-	const price     = allPrices.length > 0
-	  ? parseFloat(allPrices[allPrices.length - 1][1])
-	  : null;
-
-      // THC %
-      const thcMatch  = text.match(/THC\s*([\d.]+)%/i);
-      const thc       = thcMatch ? parseFloat(thcMatch[1]) : null;
-
-      // Extract image
-      const img = link.querySelector('img');
-      const imageUrl = img?.src ?? null;
-
-      // Find strain and brand from lines (skip lineage, weight, price, THC/CBD lines)
-      const skipPatterns = [/^(Indica|Sativa|Hybrid|CBD|CBN)$/i, /THC|CBD/, /^\$/, /^\(/, /^Flower$/i, /^Pre-roll$/i];
-      const nameParts = lines.filter(l => !skipPatterns.some(p => p.test(l)));
-
-      results.push({
-        id:        productId,
-        slug,
-        href,
-        lineage,
-        weight:    weightStr,
-        price,
-        thc,
-        imageUrl,
-        nameParts,
-        rawText:   text.slice(0, 200),
-      });
-    }
-
-    return results;
-  });
-
-  console.log(`[Jane] ${products.length} products extracted from DOM`);
+  const products = Array.from(collected.values());
+  console.log(`[Jane] ${products.length} unique products extracted from DOM across ${iterations} scroll steps`);
   if (products.length > 0) {
     console.log("  [Jane] Sample:", JSON.stringify(products[0]).slice(0, 200));
   }
 
   await context.close();
 
-  // Deduplicate by product ID
-  const seen = new Set();
-  return products.filter(p => {
-    if (seen.has(p.id)) return false;
-    seen.add(p.id); return true;
-  }).map(p => {
-    // nameParts[0] = strain, nameParts[1] = brand (typical Jane layout)
+  return products.map(p => {
     const strain = p.nameParts[0] ?? p.slug.replace(/-/g, " ");
     const brand  = p.nameParts[1] ?? "";
     const weightG = parseWeightGrams(p.weight);
@@ -167,6 +158,7 @@ async function scrapeJane(browser) {
     };
   });
 }
+
 
 // ── ② Harborside San Jose — wait longer for Dutchie to hydrate ────────────────
 

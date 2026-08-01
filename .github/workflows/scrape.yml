@@ -2,8 +2,10 @@ name: Flower Scraper
 
 on:
   schedule:
-    # 9:00 PM Pacific = 04:00 UTC (PDT)
-    - cron: "0 4 * * *"
+    # 9:00 AM Pacific, daily = 16:00 UTC (PDT).
+    # Note: cron is fixed UTC, so during PST (winter) this lands ~8 AM Pacific
+    # instead of 9 AM — a 1hr drift twice a year, not worth compensating for.
+    - cron: "0 16 * * *"
   workflow_dispatch:
 
 jobs:

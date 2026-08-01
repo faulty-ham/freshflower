@@ -94,8 +94,8 @@ After it finishes, open your GitHub Pages URL and you should see all the flower 
 
 ## Schedule
 
-The scraper runs automatically at **9:00 PM Pacific** every day via GitHub Actions.
+The scraper runs automatically at **9:00 AM Pacific** every day via GitHub Actions.
 No action needed — it just runs.
 
 To change the time, edit `.github/workflows/scrape.yml` and update the cron value.
-Current value `0 4 * * *` = 04:00 UTC = 9:00 PM PDT.
+Current value `0 16 * * *` = 16:00 UTC = 9:00 AM PDT.
