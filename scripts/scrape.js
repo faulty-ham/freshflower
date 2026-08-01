@@ -45,21 +45,29 @@ function extractJaneCards() {
     const productId = match[1];
     const slug      = match[2];
 
-    const text = link.textContent?.trim() ?? "";
+    // innerText approximates rendered line breaks (based on layout/CSS);
+    // textContent does NOT, which silently broke line-based parsing below.
+    const text = (link.innerText ?? link.textContent ?? "").trim();
 
     const lineageMatch = text.match(/^(Indica|Sativa|Hybrid|CBD|CBN)/i);
     const lineage = lineageMatch ? lineageMatch[1] : "";
 
     const lines = text.split(/\n|\r/).map(l => l.trim()).filter(Boolean);
 
-    const weightMatch = text.match(/\(([\d.]+\s*[gG](?:rams?)?)\)/i) ??
-                text.match(/\(([\d./]+\s*(?:oz|ounce)s?)\)/i);
-    const weightStr   = weightMatch ? weightMatch[1].trim() : null;
-
-    const allPrices = [...text.matchAll(/\$([\d.]+)/g)];
-    const price     = allPrices.length > 0
-      ? parseFloat(allPrices[allPrices.length - 1][1])
-      : null;
+    // Price/weight appear as "$26.99/14g" (never in parentheses).
+    // Takes the FIRST such pair — the sale price when there's a discount,
+    // since the original/crossed-out price line renders after it.
+    const priceWeightMatch = text.match(/\$([\d,.]+)\s*\/\s*([\d.]+)\s*(g|oz)/i);
+    let weightStr = null;
+    let price = null;
+    if (priceWeightMatch) {
+      price     = parseFloat(priceWeightMatch[1].replace(/,/g, ""));
+      weightStr = `${priceWeightMatch[2]}${priceWeightMatch[3].toLowerCase()}`;
+    } else {
+      // Fallback: a flat price with no "/weight" suffix.
+      const allPrices = [...text.matchAll(/\$([\d,.]+)/g)];
+      price = allPrices.length > 0 ? parseFloat(allPrices[0][1].replace(/,/g, "")) : null;
+    }
 
     const thcMatch  = text.match(/THC\s*([\d.]+)%/i);
     const thc       = thcMatch ? parseFloat(thcMatch[1]) : null;
@@ -67,8 +75,30 @@ function extractJaneCards() {
     const img = link.querySelector('img');
     const imageUrl = img?.src ?? null;
 
-    const skipPatterns = [/^(Indica|Sativa|Hybrid|CBD|CBN)$/i, /THC|CBD/, /^\$/, /^\(/, /^Flower$/i, /^Pre-roll$/i];
-    const nameParts = lines.filter(l => !skipPatterns.some(p => p.test(l)));
+    // Brand/strain: scan backward from the price/weight line (or the CTA button
+    // if no price line matched) and take the nearest two lines that aren't
+    // discount badges, "Sponsored"/rating noise, lineage+type lines, THC/CBD,
+    // or another price line. Nearest = brand, next-nearest = strain — this
+    // matches the card layout: Title / Type / [Sponsored] / Title / Brand / ...
+    const noisePatterns = [
+      /^\d+%\s*off$/i, /^sponsored$/i, /^[\d.]+\s*\(\d+\)$/,
+      /^(indica|sativa|hybrid|cbd|cbn)\s*flower$/i,
+      /^(select weight|add to bag)$/i,
+      /THC/i, /^\$/,
+    ];
+    let anchorIdx = lines.findIndex(l => /\$[\d,.]+\s*\/\s*[\d.]+\s*(g|oz)/i.test(l));
+    if (anchorIdx === -1) {
+      anchorIdx = lines.findIndex(l => /^(select weight|add to bag)$/i.test(l));
+    }
+    const nameParts = [];
+    if (anchorIdx > 0) {
+      for (let k = anchorIdx - 1; k >= 0 && nameParts.length < 2; k--) {
+        const l = lines[k];
+        if (!l || noisePatterns.some(p => p.test(l))) continue;
+        nameParts.push(l);
+      }
+    }
+    // nameParts[0] = brand (nearest to price), nameParts[1] = strain (dup title line)
 
     results.push({
       id:        productId,
@@ -138,8 +168,8 @@ async function scrapeJane(browser) {
   await context.close();
 
   return products.map(p => {
-    const strain = p.nameParts[0] ?? p.slug.replace(/-/g, " ");
-    const brand  = p.nameParts[1] ?? "";
+    const brand  = p.nameParts[0] ?? "";
+    const strain = p.nameParts[1] ?? p.slug.replace(/-/g, " ");
     const weightG = parseWeightGrams(p.weight);
     return {
       source:          "cakehouse-sj",
