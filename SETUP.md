@@ -1,5 +1,14 @@
 # Flower Tracker — Setup Instructions
 
+> **⚠️ This project is already set up and running as `faulty-ham/freshflower`.**
+> Steps 1–5 below are the *original, one-time* bootstrap instructions from before
+> the project had a permanent home — the repo, database schema, GitHub Pages site,
+> secrets, and scheduled scraper all already exist and are already working.
+> **Don't re-run them.** They're kept here only as a historical reference in case
+> the project ever needs to be stood up fresh somewhere else.
+>
+> For day-to-day use, skip straight to **Step 6** and **Schedule** below.
+
 ## What you need before starting
 - Your VaporTrails Supabase project (already exists)
 - A GitHub account
