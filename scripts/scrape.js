@@ -55,33 +55,35 @@ function parseWeightGrams(option = "") {
 // ── ① Cake House San Jose — parse product links from Jane DOM ─────────────────
 
 // Extraction logic run inside the page at each scroll checkpoint.
-
-// innerText's line-break behavior depends on the browser actually computing visual
-// layout, which can behave inconsistently in headless mode for flex/grid card
-// layouts. This instead walks real DOM text nodes and groups consecutive nodes
-// that share the same immediate parent element into one "line" — a structural
-// stand-in for line breaks that doesn't depend on rendered layout at all.
-function getTextLines(el) {
-  const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, null);
-  const groups = [];
-  let node, lastParent = null, current = "";
-  while ((node = walker.nextNode())) {
-    const t = node.textContent.trim();
-    if (!t) continue;
-    const parent = node.parentElement;
-    if (parent === lastParent) {
-      current += " " + t;
-    } else {
-      if (current) groups.push(current.trim());
-      current = t;
-      lastParent = parent;
-    }
-  }
-  if (current) groups.push(current.trim());
-  return groups;
-}
-
+// getTextLines is nested inside extractJaneCards (rather than a sibling function)
+// because page.evaluate() only serializes the exact function passed to it — any
+// other top-level function it calls does NOT travel across into the browser context.
 function extractJaneCards() {
+  // innerText's line-break behavior depends on the browser actually computing visual
+  // layout, which can behave inconsistently in headless mode for flex/grid card
+  // layouts. This instead walks real DOM text nodes and groups consecutive nodes
+  // that share the same immediate parent element into one "line" — a structural
+  // stand-in for line breaks that doesn't depend on rendered layout at all.
+  function getTextLines(el) {
+    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, null);
+    const groups = [];
+    let node, lastParent = null, current = "";
+    while ((node = walker.nextNode())) {
+      const t = node.textContent.trim();
+      if (!t) continue;
+      const parent = node.parentElement;
+      if (parent === lastParent) {
+        current += " " + t;
+      } else {
+        if (current) groups.push(current.trim());
+        current = t;
+        lastParent = parent;
+      }
+    }
+    if (current) groups.push(current.trim());
+    return groups;
+  }
+
   const links = Array.from(document.querySelectorAll('a[href*="/products/"]'));
   const results = [];
 
