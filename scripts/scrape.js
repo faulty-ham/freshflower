@@ -55,6 +55,32 @@ function parseWeightGrams(option = "") {
 // ── ① Cake House San Jose — parse product links from Jane DOM ─────────────────
 
 // Extraction logic run inside the page at each scroll checkpoint.
+
+// innerText's line-break behavior depends on the browser actually computing visual
+// layout, which can behave inconsistently in headless mode for flex/grid card
+// layouts. This instead walks real DOM text nodes and groups consecutive nodes
+// that share the same immediate parent element into one "line" — a structural
+// stand-in for line breaks that doesn't depend on rendered layout at all.
+function getTextLines(el) {
+  const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, null);
+  const groups = [];
+  let node, lastParent = null, current = "";
+  while ((node = walker.nextNode())) {
+    const t = node.textContent.trim();
+    if (!t) continue;
+    const parent = node.parentElement;
+    if (parent === lastParent) {
+      current += " " + t;
+    } else {
+      if (current) groups.push(current.trim());
+      current = t;
+      lastParent = parent;
+    }
+  }
+  if (current) groups.push(current.trim());
+  return groups;
+}
+
 function extractJaneCards() {
   const links = Array.from(document.querySelectorAll('a[href*="/products/"]'));
   const results = [];
@@ -66,14 +92,11 @@ function extractJaneCards() {
     const productId = match[1];
     const slug      = match[2];
 
-    // innerText approximates rendered line breaks (based on layout/CSS);
-    // textContent does NOT, which silently broke line-based parsing below.
-    const text = (link.innerText ?? link.textContent ?? "").trim();
+    const lines = getTextLines(link);
+    const text  = lines.join(" \n ");   // flattened form for whole-string regex matching below
 
     const lineageMatch = text.match(/^(Indica|Sativa|Hybrid|CBD|CBN)/i);
     const lineage = lineageMatch ? lineageMatch[1] : "";
-
-    const lines = text.split(/\n|\r/).map(l => l.trim()).filter(Boolean);
 
     // Price/weight appear as "$26.99/14g" (never in parentheses).
     // Takes the FIRST such pair — the sale price when there's a discount,
@@ -98,14 +121,16 @@ function extractJaneCards() {
 
     // Brand/strain: scan backward from the price/weight line (or the CTA button
     // if no price line matched) and take the nearest two lines that aren't
+
     // discount badges, "Sponsored"/rating noise, lineage+type lines, THC/CBD,
     // or another price line. Nearest = brand, next-nearest = strain — this
     // matches the card layout: Title / Type / [Sponsored] / Title / Brand / ...
     const noisePatterns = [
       /^\d+%\s*off$/i, /^sponsored$/i, /^[\d.]+\s*\(\d+\)$/,
-      /^(indica|sativa|hybrid|cbd|cbn)\s*flower$/i,
+      /^(indica|sativa|hybrid|cbd|cbn)(\s*flower)?$/i,
+      /^flower$/i,
       /^(select weight|add to bag)$/i,
-      /THC/i, /^\$/,
+      /THC/i, /CBD/i, /^\$/,
     ];
     let anchorIdx = lines.findIndex(l => /\$[\d,.]+\s*\/\s*[\d.]+\s*(g|oz)/i.test(l));
     if (anchorIdx === -1) {
@@ -131,6 +156,7 @@ function extractJaneCards() {
       thc,
       imageUrl,
       nameParts,
+      lines,
       rawText:   text.slice(0, 200),
     });
   }
@@ -223,6 +249,11 @@ async function scrapeJane(browser) {
   console.log(`[Jane] ${products.length} unique products extracted from DOM across ${iterations} scroll steps`);
   if (products.length > 0) {
     console.log("  [Jane] Sample:", JSON.stringify(products[0]).slice(0, 200));
+    console.log("  [Jane] --- debug: lines[] for first 3 products ---");
+    products.slice(0, 3).forEach((p, i) => {
+      console.log(`  [Jane] #${i} lines:`, JSON.stringify(p.lines));
+      console.log(`  [Jane] #${i} nameParts:`, JSON.stringify(p.nameParts));
+    });
   }
 
   await context.close();
