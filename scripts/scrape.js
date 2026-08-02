@@ -443,28 +443,51 @@ function extractMeadowCards() {
     return nameWords.join(" ");
   }
 
+  // Look for a percentage value belonging to a "THC"/"CBD" label, whether it's
+  // on the same line ("THC 26.66%") or the label and value are separate lines
+  // ("THC", "19.1215%") — both formats have been seen on real Meadow pages.
+  function findPercentAfterLabel(lines, label, fromIdx, maxLookahead) {
+    const labelRe = new RegExp(`^${label}\\b`, "i");
+    for (let k = fromIdx; k < Math.min(lines.length, fromIdx + maxLookahead); k++) {
+      if (!labelRe.test(lines[k])) continue;
+      const sameLine = lines[k].match(new RegExp(`${label}\\s*([\\d.]+)%`, "i"));
+      if (sameLine) return parseFloat(sameLine[1]);
+      const next = lines[k + 1];
+      if (next && /^[\d.]+%$/.test(next)) return parseFloat(next);
+    }
+    return null;
+  }
+
+  // Not every product card is guaranteed to be wrapped in its own single <a>
+  // element the way iHeartJane's are — some Meadow layouts only link a small
+  // sub-element (image, "add to cart", etc.) rather than the whole card. So
+  // instead of anchoring on individual links, this scans the WHOLE page's
+  // flattened text as one continuous stream — matching exactly how the very
+  // first pasted Meadow sample earlier in this project was parsed — and treats
+  // each "Gram"/"Item"/weight-unit line as a product-block delimiter regardless
+  // of which element it lives in.
   const anchorRe = /^(Gram|Item|Eighth|Half Ounce|Ounce|Pre-?Roll|\d+(\.\d+)?\s*grams?)$/i;
-  const links = Array.from(document.querySelectorAll("a[href]"));
+  const lines = getTextLines(document.body);
   const results = [];
 
-  for (const link of links) {
-    const lines = getTextLines(link);
-    const anchorIdx = lines.findIndex(l => anchorRe.test(l));
-    if (anchorIdx === -1) continue; // not a product card — nav/category/other link
+  for (let i = 0; i < lines.length; i++) {
+    if (!anchorRe.test(lines[i])) continue;
 
-    const brand    = lines[anchorIdx + 1] ? lines[anchorIdx + 1].trim() : "";
-    const fullName = lines[anchorIdx + 2] ? lines[anchorIdx + 2].trim() : "";
+    const brand    = lines[i + 1] ? lines[i + 1].trim() : "";
+    const fullName = lines[i + 2] ? lines[i + 2].trim() : "";
     if (!brand || !fullName) continue;
+    if (/^\$|%\s*off$/i.test(brand) || /^\$|%\s*off$/i.test(fullName)) continue;
 
     // Price: nearest $ line scanning backward from the anchor, skipping blanks
-    // and "% off" lines — this lands on the sale price when discounted, or the
-    // only price otherwise (same rule validated against real Meadow text earlier).
+    // and "% off" lines — lands on the sale price when discounted, the only
+    // price otherwise. Allows whitespace between "$" and the amount since DOM
+    // text-node grouping sometimes splits them into adjacent lines.
     let price = null;
-    for (let j = anchorIdx - 1; j >= Math.max(0, anchorIdx - 6); j--) {
+    for (let j = i - 1; j >= Math.max(0, i - 6); j--) {
       const l = lines[j];
       if (!l) continue;
       if (/%\s*off$/i.test(l)) continue;
-      const m = l.match(/^\$([\d,.]+)/);
+      const m = l.match(/^\$\s*([\d,.]+)/);
       if (m) { price = parseFloat(m[1].replace(/,/g, "")); break; }
       break;
     }
@@ -479,16 +502,13 @@ function extractMeadowCards() {
     let strain = stripTrailingBrand(strainSource, brand).replace(/\s+/g, " ").trim();
     if (!strain) strain = strainSource.trim();
 
-    const thcMatch = lines.join(" ").match(/THC\s*([\d.]+)%/i);
-    const thc = thcMatch ? parseFloat(thcMatch[1]) : null;
+    const thc = findPercentAfterLabel(lines, "THC", i + 3, 6);
 
-    const img = link.querySelector("img");
-    const imageUrl = img?.src ?? null;
-    const href = link.href;
-    const idMatch = href.match(/(\d{4,})/); // best-effort numeric id from the URL
-    const id = idMatch ? idMatch[1] : href.split("/").filter(Boolean).pop() || strain;
+    // No reliable per-product href with this whole-page scanning approach —
+    // caller falls back to the search group's own URL for product_url.
+    const id = `${brand}-${strainSource}-${weight}`.toLowerCase().replace(/[^a-z0-9]+/g, "-");
 
-    results.push({ id, href, brand, strain, weight, price, thc, imageUrl, lines });
+    results.push({ id, href: null, brand, strain, weight, price, thc, imageUrl: null, lines: lines.slice(Math.max(0, i - 4), i + 6) });
   }
 
   return results;
@@ -623,7 +643,7 @@ async function scrapeMeadowGroup(browser, group) {
       price:           p.price,
       thc_pct:         p.thc,
       cbd_pct:         null,
-      product_url:     p.href,
+      product_url:     p.href || group.url,
       image_url:       p.imageUrl,
       search_group_title: group.title,
     };

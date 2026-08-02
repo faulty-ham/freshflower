@@ -119,7 +119,6 @@ select
 from flower.products p
 left join flower.search_groups sg on sg.id = p.search_group_id
 where p.is_available = true
-  and (p.weight_grams is null or p.weight_grams >= 3.5)
 order by sg.title, p.brand, p.strain, p.weight_grams;
 
 -- ── Row-Level Security ────────────────────────────────────────
