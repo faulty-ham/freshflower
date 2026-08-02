@@ -12,25 +12,18 @@ const supabase = createClient(
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
-// Only these brands get scraped/stored for Cake House. Matching is case-insensitive
-// and fuzzy (substring either direction), so "CAM" matches "CAM Private Reserve" and
-// "UpNorth" matches "UpNorth Humboldt" without needing exact spelling.
-const FAVORITE_BRANDS = [
-  "A Golden State",
-  "Blueprint",
-  "CAM Private Reserve",
-  "Cream of the Crop",
-  "Fig Farms",
-  "Green Dragon",
-  "Lumpy's",
-  "No Till Kings",
-  "Pure Beauty",
-  "Snowtill",
-  "Team Elite Genetics",
-  "Top Shelf Cultivation",
-  "Wizard Trees",
-  "UpNorth",
-  "Wonderbrett",
+// Each entry is a pre-filtered store URL scraped directly, instead of scraping
+// the whole catalog and filtering after the fact. Title must always follow the
+// "Store - Brand - Weight" format — the dashboard splits on " - " to filter by
+// those three fields.
+const SEARCH_GROUPS = [
+  {
+    title:  "Cake House - Fig Farms - 3.5g",
+    url:    "https://cakehousecannabis.com/order-weed/shop-all?category=Flower-6524&weight=eighth+ounce&brand=Fig+Farms",
+    store:  "Cake House",
+    brand:  "Fig Farms",
+    weight: "3.5g",
+  },
 ];
 
 function parseWeightGrams(option = "") {
@@ -121,13 +114,25 @@ function extractJaneCards() {
     const img = link.querySelector('img');
     const imageUrl = img?.src ?? null;
 
-    // Brand/strain: real DOM structure (confirmed via debug logging against live
-    // data) is simply [lineage?, strain, brand, ...packaging/price/THC noise].
-    // Lineage badge is optional — when present it's always first.
-    const lineageWords = new Set(["indica", "sativa", "hybrid", "cbd", "cbn"]);
-    const startIdx = (lines[0] && lineageWords.has(lines[0].toLowerCase())) ? 1 : 0;
-    const strainVal = lines[startIdx] ?? "";
-    const brandVal  = lines[startIdx + 1] ?? "";
+    // Brand/strain: strip every known noise line (lineage badge, rating, discount
+    // badge, "Sponsored", THC/CBD, price, weight-in-parens, weight-suffix, CTA
+    // button text) wherever it occurs, then take the first two lines left over.
+    // Robust to both observed layouts: "[lineage] strain brand ...noise..." and
+    // "[lineage] strain brand packaging-descriptor ...noise...".
+    const noiseRe = [
+      /^(indica|sativa|hybrid|cbd|cbn)(\s*flower)?$/i,
+      /^\d+(\.\d+)?\s*\(\d+\)$/,      // rating, e.g. "5.0 (5)"
+      /^\d+%\s*off$/i,               // discount badge
+      /^sponsored$/i,
+      /^\$[\d,.]+$/,                 // standalone price
+      /^\(\s*[\d.]+\s*[a-zA-Z]+\s*\)$/, // "( 14G )"
+      /^\/\s*[\d.]+\s*(g|oz)$/i,     // "/ 14g"
+      /^THC/i, /^CBD/i,
+      /^(select weight|add to bag)$/i,
+    ];
+    const contentLines = lines.filter(l => !noiseRe.some(re => re.test(l)));
+    const strainVal = contentLines[0] ?? "";
+    const brandVal  = contentLines[1] ?? "";
     const nameParts = [brandVal, strainVal];
     // nameParts[0] = brand, nameParts[1] = strain
 
@@ -149,120 +154,85 @@ function extractJaneCards() {
   return results;
 }
 
-async function scrapeJane(browser) {
-  console.log("\n[Jane] Scraping Cake House San Jose\u2026");
+async function upsertSearchGroup(group) {
+  const { data, error } = await supabase.schema("flower").from("search_groups")
+    .upsert({
+      title: group.title, url: group.url,
+      store: group.store, brand: group.brand, weight_label: group.weight,
+    }, { onConflict: "title" })
+    .select("id")
+    .single();
+  if (error) { console.error("  search_group upsert error:", error.message); return null; }
+  return data.id;
+}
+
+async function scrapeSearchGroup(browser, group) {
+  console.log(`\n[SearchGroup] ${group.title}`);
   const context = await browser.newContext({
     userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
   });
   const page = await context.newPage();
 
-  await page.goto(
-    "https://www.iheartjane.com/stores/6524/the-cake-house-san-jose/menu/flower",
-    { waitUntil: "domcontentloaded", timeout: 60000 }
-  );
+  await page.goto(group.url, { waitUntil: "domcontentloaded", timeout: 60000 });
+  await page.waitForSelector('a[href*="/products/"]', { timeout: 20000 }).catch(() => {});
+  await sleep(2500);
 
-  await page.waitForSelector('a[href*="/products/"]', { timeout: 20000 });
-  await sleep(3000);
+  // The site itself states the true result count (e.g. "7 products") — use it
+  // both to know when we've captured everything and to trim off the unrelated
+  // "Flower For You" recommendations that get appended after the real results.
+  const declaredCount = await page.evaluate(() => {
+    const m = document.body.innerText.match(/(\d+)\s+products?\b/i);
+    return m ? parseInt(m[1], 10) : null;
+  });
+  console.log(`  [SearchGroup] declared count on page: ${declaredCount ?? "not found"}`);
 
-  // The list is virtualized \u2014 cards scrolled out of view get removed from the DOM
-  // entirely, not just hidden. So we extract at EVERY scroll checkpoint and merge
-  // by product id, rather than waiting for a final "stable" render and grabbing once.
   const collected = new Map();
-  function mergeBatch(batch) {
-    for (const item of batch) collected.set(item.id, item);
-  }
-
+  function mergeBatch(batch) { for (const item of batch) collected.set(item.id, item); }
   mergeBatch(await page.evaluate(extractJaneCards));
 
-  // The product grid may scroll inside its own nested container rather than the
-  // page itself (common with virtualized lists) \u2014 scrolling the page in that case
-  // does little or nothing, which is the likely cause of premature plateaus.
-  // Detect the real scrollable container: the overflow:auto/scroll element that
-  // actually contains the most product links, falling back to the page itself.
-  const scrollInfo = await page.evaluate(() => {
-    const candidates = Array.from(document.querySelectorAll("*")).filter(el => {
-      const cs = getComputedStyle(el);
-      return (cs.overflowY === "auto" || cs.overflowY === "scroll") &&
-             el.scrollHeight > el.clientHeight + 50;
-    });
-    let bestIdx = -1, bestCount = 0;
-    candidates.forEach((el, i) => {
-      const count = el.querySelectorAll('a[href*="/products/"]').length;
-      if (count > bestCount) { bestCount = count; bestIdx = i; }
-    });
-    if (bestIdx === -1) return { usesContainer: false };
-    const el = candidates[bestIdx];
-    el.setAttribute("data-ff-scroll-target", "1");
-    return { usesContainer: true, productCount: bestCount, scrollHeight: el.scrollHeight, clientHeight: el.clientHeight };
-  });
-  console.log(`  [Jane] scroll target: ${scrollInfo.usesContainer ? `nested container (${scrollInfo.productCount} links, ${scrollInfo.scrollHeight}px)` : "page (no nested scroll container found)"}`);
-
-  const viewportHeight = scrollInfo.usesContainer ? scrollInfo.clientHeight : await page.evaluate(() => window.innerHeight);
-  const step = Math.max(200, Math.round(viewportHeight * 0.6));
-  let maxScroll = scrollInfo.usesContainer ? scrollInfo.scrollHeight : await page.evaluate(() => document.scrollingElement.scrollHeight);
+  // Small, pre-filtered result sets shouldn't need much scrolling, but do a
+  // modest pass in case of any lazy loading.
   let pos = 0;
+  const step = 700;
+  let maxScroll = await page.evaluate(() => document.scrollingElement.scrollHeight);
   let iterations = 0;
-  const maxIterations = 400;
-
-  const scrollTo = async (y) => {
-    if (scrollInfo.usesContainer) {
-      await page.evaluate((y) => {
-        document.querySelector('[data-ff-scroll-target="1"]').scrollTop = y;
-      }, y);
-    } else {
-      await page.evaluate((y) => window.scrollTo(0, y), y);
-    }
-  };
-  const currentMaxScroll = async () => {
-    if (scrollInfo.usesContainer) {
-      return page.evaluate(() => document.querySelector('[data-ff-scroll-target="1"]').scrollHeight);
-    }
-    return page.evaluate(() => document.scrollingElement.scrollHeight);
-  };
-
-  while (pos <= maxScroll && iterations < maxIterations) {
-    await scrollTo(pos);
+  const maxIterations = 40;
+  while (pos <= maxScroll && iterations < maxIterations &&
+         (declaredCount == null || collected.size < declaredCount)) {
+    await page.evaluate((y) => window.scrollTo(0, y), pos);
     await sleep(500);
     mergeBatch(await page.evaluate(extractJaneCards));
-    maxScroll = Math.max(maxScroll, await currentMaxScroll());
+    maxScroll = Math.max(maxScroll, await page.evaluate(() => document.scrollingElement.scrollHeight));
     pos += step;
     iterations++;
-    if (iterations % 15 === 0) console.log(`  [Jane] step ${iterations}, ${collected.size} unique so far`);
   }
 
-  const products = Array.from(collected.values());
-  console.log(`[Jane] ${products.length} unique products extracted from DOM across ${iterations} scroll steps`);
+  // Products come back in DOM/discovery order — genuine filtered results first,
+  // "Flower For You" recommendations appended after. If we know the declared
+  // count, trim to exactly that many rather than guessing at container boundaries.
+  let products = Array.from(collected.values());
+  console.log(`  [SearchGroup] ${products.length} product cards found in DOM across ${iterations} scroll steps`);
+  if (declaredCount != null && products.length > declaredCount) {
+    console.log(`  [SearchGroup] trimming to declared count ${declaredCount} (extra are likely "Flower For You" recommendations)`);
+    products = products.slice(0, declaredCount);
+  } else if (declaredCount != null && products.length < declaredCount) {
+    console.log(`  [SearchGroup] WARNING: only found ${products.length} of ${declaredCount} declared — scrape may be incomplete`);
+  }
+
   if (products.length > 0) {
-    console.log("  [Jane] Sample:", JSON.stringify(products[0]).slice(0, 200));
-    console.log("  [Jane] --- debug: lines[] for first 3 products ---");
+    console.log("  [SearchGroup] --- debug: lines[] for first 3 products ---");
     products.slice(0, 3).forEach((p, i) => {
-      console.log(`  [Jane] #${i} lines:`, JSON.stringify(p.lines));
-      console.log(`  [Jane] #${i} nameParts:`, JSON.stringify(p.nameParts));
+      console.log(`  [SearchGroup] #${i} lines:`, JSON.stringify(p.lines));
+      console.log(`  [SearchGroup] #${i} nameParts:`, JSON.stringify(p.nameParts));
     });
   }
 
   await context.close();
 
-  // Only keep favorite brands \u2014 fuzzy, case-insensitive, substring-in-either-direction
-  // match (so "CAM" matches "CAM Private Reserve", "UpNorth" matches "UpNorth Humboldt").
-  const norm = s => (s ?? "").toLowerCase().trim();
-  const favBrandsNorm = FAVORITE_BRANDS.map(norm);
-  const matchesFavoriteBrand = brand => {
-    const b = norm(brand);
-    if (!b) return false;
-    return favBrandsNorm.some(fav => b.includes(fav) || fav.includes(b));
-  };
-
-  const filtered = products.filter(p => {
-    const brand = p.nameParts[0] ?? "";
-    return matchesFavoriteBrand(brand);
-  });
-  console.log(`[Jane] ${filtered.length} of ${products.length} match favorite brands`);
-
-  return filtered.map(p => {
-    const brand  = p.nameParts[0] ?? "";
+  return products.map(p => {
+    const brand  = p.nameParts[0] || group.brand;
     const strain = p.nameParts[1] ?? p.slug.replace(/-/g, " ");
-    const weightG = parseWeightGrams(p.weight);
+    const weightG = parseWeightGrams(p.weight) ?? parseWeightGrams(group.weight);
     return {
       source:          "cakehouse-sj",
       jane_product_id: `jane-${p.id}-${p.weight ?? "default"}`,
@@ -271,18 +241,19 @@ async function scrapeJane(browser) {
       strain,
       lineage:         p.lineage,
       weight_grams:    weightG,
-      weight_label:    p.weight,
+      weight_label:    p.weight ?? group.weight,
       price:           p.price,
       thc_pct:         p.thc,
       cbd_pct:         null,
       product_url:     p.href,
       image_url:       p.imageUrl,
+      search_group_title: group.title,
     };
   });
 }
 
 
-// ── ② Harborside San Jose — wait longer for Dutchie to hydrate ────────────────
+// ── ② Harborside
 
 async function scrapeDutchie(browser) {
   console.log("\n[Dutchie] Scraping Harborside San Jose…");
@@ -403,6 +374,7 @@ async function upsertProduct(p) {
     weight_grams: p.weight_grams, weight_label: p.weight_label, price: p.price,
     thc_pct: p.thc_pct, cbd_pct: p.cbd_pct,
     product_url: p.product_url, image_url: p.image_url,
+    search_group_id: p.search_group_id ?? null,
     is_available: true, last_seen_at: new Date().toISOString(),
   }, { onConflict: "jane_product_id", ignoreDuplicates: false });
   if (error) console.error("  upsert error:", error.message);
@@ -483,9 +455,15 @@ async function main() {
   console.log(`\n🌿 FreshFlower scrape — ${new Date().toISOString()}`);
   const browser = await chromium.launch({ headless: true });
   try {
-    const janeProducts    = await scrapeJane(browser);
+    let all = [];
+    for (const group of SEARCH_GROUPS) {
+      const groupId = await upsertSearchGroup(group);
+      const groupProducts = await scrapeSearchGroup(browser, group);
+      for (const p of groupProducts) p.search_group_id = groupId;
+      all = all.concat(groupProducts);
+    }
     const dutchieProducts = await scrapeDutchie(browser);
-    const all = [...janeProducts, ...dutchieProducts];
+    all = all.concat(dutchieProducts);
     console.log(`\n  ${all.length} total variants`);
     const restockedAndNew = await findRestockedAndNew(all);
     console.log(`  🆕 ${restockedAndNew.length} new/restocked`);

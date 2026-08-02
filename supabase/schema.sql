@@ -36,6 +36,27 @@ create index if not exists products_source_idx  on flower.products (source);
 create index if not exists products_weight_idx  on flower.products (weight_grams);
 create index if not exists products_base_idx    on flower.products (product_base_id);
 
+-- ── Search groups ────────────────────────────────────────────
+-- Each row is one pre-filtered store URL the scraper visits directly
+-- (e.g. "Cake House - Fig Farms - 3.5g"), instead of scraping the whole
+-- catalog and filtering after the fact. Title always follows the
+-- "Store - Brand - Weight" format so it can be split for filtering.
+
+create table if not exists flower.search_groups (
+  id            bigserial    primary key,
+  title         text         not null unique,   -- "Cake House - Fig Farms - 3.5g"
+  url           text         not null,
+  store         text         not null,
+  brand         text         not null,
+  weight_label  text         not null,
+  created_at    timestamptz  not null default now()
+);
+
+alter table flower.products
+  add column if not exists search_group_id bigint references flower.search_groups (id);
+
+create index if not exists products_search_group_idx on flower.products (search_group_id);
+
 -- ── Availability log ──────────────────────────────────────────
 
 create table if not exists flower.availability_log (
@@ -87,36 +108,55 @@ select
   exists (
     select 1 from flower.favorites f
     where f.type = 'product' and f.product_base_id = p.product_base_id
-  ) as product_favorited
+  ) as product_favorited,
+  -- new columns must go last: CREATE OR REPLACE VIEW can only append, not reorder
+  p.search_group_id,
+  sg.title        as search_group_title,
+  sg.url          as search_group_url,
+  sg.store        as search_group_store,
+  sg.brand        as search_group_brand,
+  sg.weight_label as search_group_weight
 from flower.products p
+left join flower.search_groups sg on sg.id = p.search_group_id
 where p.is_available = true
   and (p.weight_grams is null or p.weight_grams >= 3.5)
-order by p.brand, p.strain, p.weight_grams;
+order by sg.title, p.brand, p.strain, p.weight_grams;
 
 -- ── Row-Level Security ────────────────────────────────────────
 
 alter table flower.products         enable row level security;
 alter table flower.availability_log enable row level security;
 alter table flower.favorites        enable row level security;
+alter table flower.search_groups    enable row level security;
 
 -- Public read on products and log
+drop policy if exists "public can read products" on flower.products;
 create policy "public can read products"
   on flower.products for select using (true);
 
+drop policy if exists "public can read availability_log" on flower.availability_log;
 create policy "public can read availability_log"
   on flower.availability_log for select using (true);
 
+drop policy if exists "public can read search_groups" on flower.search_groups;
+create policy "public can read search_groups"
+  on flower.search_groups for select using (true);
+
 -- Favorites: public can read, insert, update, delete
 -- (single-user personal tool — no auth needed)
+drop policy if exists "public can read favorites" on flower.favorites;
 create policy "public can read favorites"
   on flower.favorites for select using (true);
 
+drop policy if exists "public can insert favorites" on flower.favorites;
 create policy "public can insert favorites"
   on flower.favorites for insert with check (true);
 
+drop policy if exists "public can update favorites" on flower.favorites;
 create policy "public can update favorites"
   on flower.favorites for update using (true);
 
+drop policy if exists "public can delete favorites" on flower.favorites;
 create policy "public can delete favorites"
   on flower.favorites for delete using (true);
 

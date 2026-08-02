@@ -1,663 +1,269 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Flower Tracker</title>
-  <style>
-    :root {
-      --bg:        #0f1106;
-      --surface:   #181a0e;
-      --border:    #2a2e18;
-      --accent:    #a8c45a;
-      --accent-dim:#6b7d38;
-      --text:      #dde8b0;
-      --muted:     #7a8660;
-      --danger:    #c45a5a;
-      --fav:       #e8b84b;
-      --sativa:    #c49a5a;
-      --indica:    #7a5ac4;
-      --hybrid:    #5a9ac4;
-      --cbd:       #5ac47a;
-      --radius:    6px;
-      --font-ui:   'DM Mono', 'Fira Mono', monospace;
-    }
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    body { background: var(--bg); color: var(--text); font-family: system-ui, sans-serif; font-size: 14px; min-height: 100vh; }
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0">
+<title>FreshFlower</title>
+<meta name="theme-color" content="#13131c">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;500;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg:      #0d0d12; --bg2:     #13131c; --bg3:    #1a1a27;
+  --border:  rgba(255,255,255,0.07); --border2: rgba(255,255,255,0.12);
+  --text: #e8e6f0; --muted: #7a789a; --dim: #4a4868;
+  --amber:  #f0a832; --amber-dim: rgba(240,168,50,0.12);
+  --teal:   #2dd4a0; --teal-dim:  rgba(45,212,160,0.10);
+  --coral:  #f06060; --coral-dim: rgba(240,96,96,0.10);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html { font-size: 100%; }
+body { background: var(--bg); color: var(--text); font-family: 'DM Sans', sans-serif; min-height: 100dvh; }
 
-    /* ── Layout ── */
-    .app { display: flex; flex-direction: column; height: 100vh; }
+/* -- Header -- */
+header {
+  background: var(--bg2); border-bottom: 1px solid var(--border2);
+  padding: 16px 20px; position: sticky; top: 0; z-index: 10;
+}
+.header-row { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
+.logo { font-family: 'Bebas Neue', sans-serif; font-size: 28px; letter-spacing: 3px; color: var(--amber); line-height: 1; }
+.stat-pill {
+  background: var(--bg3); border: 1px solid var(--border); border-radius: 100px;
+  padding: 5px 12px; font-size: 11px; color: var(--muted); font-family: 'DM Mono', monospace; white-space: nowrap;
+}
+.stat-pill strong { color: var(--text); }
 
-    header {
-      padding: 12px 20px;
-      border-bottom: 1px solid var(--border);
-      display: flex; align-items: center; gap: 14px;
-      background: var(--surface); flex-shrink: 0;
-    }
-    header h1 { font-family: var(--font-ui); font-size: 13px; letter-spacing: .12em; text-transform: uppercase; color: var(--accent); flex-shrink: 0; }
-    .status-pill { font-family: var(--font-ui); font-size: 11px; color: var(--muted); margin-left: auto; }
+/* -- Filters -- */
+.filters { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 14px; }
+.filters select {
+  background: var(--bg3); border: 1px solid var(--border2); color: var(--text);
+  font-family: 'DM Sans', sans-serif; font-size: 13px; padding: 8px 12px; border-radius: 8px;
+  outline: none; cursor: pointer; min-width: 130px;
+}
+.filters select:hover { border-color: var(--amber); }
+.clear-filters {
+  background: transparent; border: 1px solid var(--border); color: var(--muted);
+  font-size: 12px; padding: 8px 12px; border-radius: 8px; cursor: pointer; font-family: 'DM Mono', monospace;
+}
+.clear-filters:hover { color: var(--text); border-color: var(--border2); }
 
-    /* ── Filters ── */
-    .filters {
-      padding: 10px 20px; border-bottom: 1px solid var(--border);
-      background: var(--surface); display: flex; flex-wrap: wrap; gap: 8px; align-items: center; flex-shrink: 0;
-    }
-    .filter-group { display: flex; align-items: center; gap: 6px; }
-    .filter-label { font-family: var(--font-ui); font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); white-space: nowrap; }
+/* -- Content -- */
+main { max-width: 900px; margin: 0 auto; padding: 20px; }
+.state-msg { text-align: center; padding: 60px 20px; color: var(--dim); font-family: 'DM Mono', monospace; font-size: 13px; }
+.spinner {
+  width: 24px; height: 24px; border: 2px solid var(--border2); border-top-color: var(--amber);
+  border-radius: 50%; display: inline-block; animation: spin 0.8s linear infinite; margin-bottom: 10px;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
 
-    select, input[type="text"] {
-      background: var(--bg); color: var(--text); border: 1px solid var(--border);
-      border-radius: var(--radius); padding: 5px 8px; font-size: 13px; outline: none; cursor: pointer;
-    }
-    select:focus, input[type="text"]:focus { border-color: var(--accent-dim); }
+/* -- Search group section -- */
+.group { margin-bottom: 28px; }
+.group-header {
+  display: flex; align-items: baseline; gap: 10px; padding: 10px 4px;
+  border-bottom: 1px solid var(--border2); margin-bottom: 2px; flex-wrap: wrap;
+}
+.group-title {
+  font-family: 'Bebas Neue', sans-serif; font-size: 20px; letter-spacing: 1px;
+  color: var(--text); text-decoration: none; display: flex; align-items: center; gap: 6px;
+}
+.group-title:hover { color: var(--amber); }
+.group-title .arrow { font-size: 14px; color: var(--dim); }
+.group-count { font-family: 'DM Mono', monospace; font-size: 11px; color: var(--dim); }
 
-    /* Brand popover */
-    .brand-dropdown { position: relative; }
-    .brand-btn {
-      background: var(--bg); color: var(--text); border: 1px solid var(--border);
-      border-radius: var(--radius); padding: 5px 10px; font-size: 13px; cursor: pointer;
-      white-space: nowrap; display: flex; align-items: center; gap: 6px;
-    }
-    .brand-btn:hover { border-color: var(--accent-dim); }
-    .brand-popover {
-      display: none; position: absolute; top: calc(100% + 4px); left: 0;
-      background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
-      min-width: 240px; max-height: 300px; overflow-y: auto; z-index: 100; padding: 6px 0;
-      box-shadow: 0 8px 24px rgba(0,0,0,.5);
-    }
-    .brand-popover.open { display: block; }
-    .brand-search { padding: 4px 10px 8px; border-bottom: 1px solid var(--border); margin-bottom: 4px; }
-    .brand-search input { width: 100%; }
-    .brand-option { display: flex; align-items: center; gap: 8px; padding: 5px 12px; cursor: pointer; font-size: 13px; }
-    .brand-option:hover { background: var(--border); }
-    .brand-option input[type=checkbox] { accent-color: var(--accent); cursor: pointer; flex-shrink: 0; }
-    .brand-option label { cursor: pointer; flex: 1; }
-    .brand-fav-star { color: var(--fav); font-size: 12px; cursor: pointer; padding: 0 2px; flex-shrink: 0; }
-    .brand-fav-star.unfav { color: var(--border); }
-    .brand-fav-star:hover { color: var(--fav); }
-    .brand-actions { padding: 6px 12px 2px; border-top: 1px solid var(--border); margin-top: 4px; display: flex; gap: 8px; }
-    .link-btn { background: none; border: none; color: var(--accent-dim); font-size: 11px; cursor: pointer; padding: 0; text-decoration: underline; }
-    .link-btn:hover { color: var(--accent); }
+/* -- Row list -- */
+.row-list { display: flex; flex-direction: column; }
+.row {
+  display: grid; grid-template-columns: 1fr auto auto auto auto; gap: 14px; align-items: center;
+  padding: 11px 4px; text-decoration: none; color: var(--text);
+  border-bottom: 1px solid var(--border); transition: background 0.1s;
+}
+.row:hover { background: var(--bg2); }
+.row-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.row-strain { font-size: 14px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.row-brand { font-size: 11px; color: var(--muted); font-family: 'DM Mono', monospace; }
+.row-thc { font-size: 11px; color: var(--dim); font-family: 'DM Mono', monospace; white-space: nowrap; }
+.row-weight { font-size: 12px; color: var(--muted); font-family: 'DM Mono', monospace; white-space: nowrap; }
+.row-price { font-size: 14px; font-weight: 700; font-family: 'DM Mono', monospace; color: var(--teal); white-space: nowrap; }
+.row-added {
+  font-size: 10px; font-family: 'DM Mono', monospace; padding: 3px 7px; border-radius: 100px;
+  white-space: nowrap; text-align: center;
+}
+.row-added.is-new  { background: var(--teal-dim);  color: var(--teal); }
+.row-added.is-old   { background: var(--bg3); color: var(--dim); border: 1px solid var(--border); }
 
-    /* Toggle buttons */
-    .toggle-group { display: flex; gap: 4px; }
-    .tog-btn {
-      padding: 4px 10px; border-radius: var(--radius); font-size: 12px;
-      font-family: var(--font-ui); border: 1px solid var(--border);
-      background: var(--bg); color: var(--muted); cursor: pointer; letter-spacing: .05em;
-    }
-    .tog-btn.active { background: var(--accent-dim); border-color: var(--accent-dim); color: var(--bg); }
+@media (max-width: 640px) {
+  .row { grid-template-columns: 1fr auto auto; row-gap: 4px; }
+  .row-thc, .row-added { display: none; }
+}
 
-    .lineage-btn { padding: 4px 9px; border-radius: var(--radius); font-size: 11px; font-family: var(--font-ui); border: 1px solid var(--border); background: var(--bg); color: var(--muted); cursor: pointer; letter-spacing: .05em; text-transform: uppercase; }
-    .lineage-btn[data-lineage="sativa"].active { background: var(--sativa); border-color: var(--sativa); color: var(--bg); }
-    .lineage-btn[data-lineage="indica"].active { background: var(--indica); border-color: var(--indica); color: var(--text); }
-    .lineage-btn[data-lineage="hybrid"].active { background: var(--hybrid); border-color: var(--hybrid); color: var(--bg); }
-    .lineage-btn[data-lineage="cbd"].active    { background: var(--cbd);    border-color: var(--cbd);    color: var(--bg); }
-
-    .fav-filter-btn { padding: 4px 9px; border-radius: var(--radius); font-size: 12px; font-family: var(--font-ui); border: 1px solid var(--border); background: var(--bg); color: var(--muted); cursor: pointer; }
-    .fav-filter-btn.active { background: rgba(232,184,75,.15); border-color: var(--fav); color: var(--fav); }
-
-    .reset-btn { padding: 4px 9px; border-radius: var(--radius); font-size: 11px; font-family: var(--font-ui); border: 1px solid var(--border); background: var(--bg); color: var(--muted); cursor: pointer; margin-left: 2px; }
-    .reset-btn:hover { border-color: var(--accent-dim); color: var(--text); }
-
-    /* Sort bar */
-    .sort-bar {
-      padding: 6px 20px; border-bottom: 1px solid var(--border);
-      display: flex; align-items: center; gap: 12px; flex-shrink: 0; background: var(--bg);
-    }
-    .count-label { font-family: var(--font-ui); font-size: 11px; color: var(--muted); }
-    .count-label span { color: var(--accent); }
-    .sort-group { display: flex; align-items: center; gap: 6px; margin-left: auto; }
-
-    /* Grid */
-    .grid-wrap { flex: 1; overflow-y: auto; padding: 16px 20px; }
-    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
-
-    /* Card */
-    .card {
-      background: var(--surface); border: 1px solid var(--border);
-      border-radius: var(--radius); overflow: hidden;
-      display: flex; flex-direction: column; transition: border-color .15s; position: relative;
-    }
-    .card:hover { border-color: var(--accent-dim); }
-    .card.brand-fav { border-color: rgba(232,184,75,.3); }
-    .card.product-fav { border-color: var(--fav); }
-
-    .card-img-wrap { position: relative; }
-    .card-img { width: 100%; aspect-ratio: 1; object-fit: cover; background: var(--bg); display: block; }
-    .card-img-placeholder { width: 100%; aspect-ratio: 1; background: var(--bg); display: flex; align-items: center; justify-content: center; font-size: 32px; color: var(--border); }
-
-    /* Badges on image */
-    .img-badges { position: absolute; top: 7px; left: 7px; display: flex; flex-direction: column; gap: 3px; }
-    .new-badge { background: var(--accent); color: var(--bg); font-family: var(--font-ui); font-size: 9px; letter-spacing: .1em; text-transform: uppercase; padding: 2px 6px; border-radius: 3px; width: fit-content; }
-    .date-badge { background: rgba(15,17,6,.75); color: var(--muted); font-family: var(--font-ui); font-size: 9px; padding: 2px 5px; border-radius: 3px; width: fit-content; }
-
-    /* Fav star on card */
-    .card-fav-btn {
-      position: absolute; top: 7px; right: 7px;
-      background: rgba(15,17,6,.7); border: none; border-radius: 50%;
-      width: 26px; height: 26px; display: flex; align-items: center; justify-content: center;
-      cursor: pointer; font-size: 14px; transition: background .15s;
-    }
-    .card-fav-btn:hover { background: rgba(15,17,6,.9); }
-
-    .card-body { padding: 10px 12px 12px; flex: 1; display: flex; flex-direction: column; gap: 4px; }
-    .card-brand { font-family: var(--font-ui); font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); display: flex; align-items: center; gap: 4px; }
-    .brand-star { color: var(--fav); font-size: 10px; }
-    .card-strain { font-size: 14px; font-weight: 600; color: var(--text); line-height: 1.3; }
-
-    /* Date added */
-    .card-date { font-family: var(--font-ui); font-size: 10px; color: var(--muted); margin-top: 1px; }
-    .card-date-new { color: var(--accent); }
-
-    .card-meta { display: flex; align-items: center; gap: 6px; margin-top: 3px; flex-wrap: wrap; }
-    .badge { font-family: var(--font-ui); font-size: 10px; letter-spacing: .06em; padding: 2px 6px; border-radius: 3px; text-transform: uppercase; }
-    .badge-sativa { background: rgba(196,154,90,.18); color: var(--sativa); }
-    .badge-indica { background: rgba(122,90,196,.18); color: var(--indica); }
-    .badge-hybrid { background: rgba(90,154,196,.18); color: var(--hybrid); }
-    .badge-cbd    { background: rgba(90,196,122,.18); color: var(--cbd); }
-    .badge-other  { background: rgba(255,255,255,.07); color: var(--muted); }
-    .badge-store  { font-family: var(--font-ui); font-size: 9px; letter-spacing: .08em; padding: 2px 5px; border-radius: 3px; text-transform: uppercase; background: rgba(255,255,255,.06); color: var(--muted); }
-
-    .card-price-row { margin-top: auto; padding-top: 8px; display: flex; align-items: baseline; gap: 8px; }
-    .card-price { font-family: var(--font-ui); font-size: 15px; color: var(--accent); font-weight: 600; }
-    .card-weight { font-family: var(--font-ui); font-size: 11px; color: var(--muted); }
-    .card-link { display: block; margin-top: 8px; padding: 6px; text-align: center; background: var(--border); border-radius: var(--radius); color: var(--muted); text-decoration: none; font-size: 11px; font-family: var(--font-ui); letter-spacing: .06em; transition: background .15s, color .15s; }
-    .card-link:hover { background: var(--accent-dim); color: var(--bg); }
-
-    /* States */
-    .state-msg { grid-column: 1/-1; padding: 60px 20px; text-align: center; color: var(--muted); font-family: var(--font-ui); font-size: 13px; letter-spacing: .08em; }
-    .spinner { display: inline-block; width: 20px; height: 20px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .7s linear infinite; margin-bottom: 12px; }
-    @keyframes spin { to { transform: rotate(360deg); } }
-
-    /* Toast */
-    .toast { position: fixed; bottom: 20px; right: 20px; background: var(--surface); border: 1px solid var(--accent-dim); border-radius: var(--radius); padding: 10px 16px; font-family: var(--font-ui); font-size: 12px; color: var(--text); z-index: 200; opacity: 0; transform: translateY(8px); transition: all .2s; pointer-events: none; }
-    .toast.show { opacity: 1; transform: translateY(0); }
-  </style>
+.empty { padding: 60px 20px; text-align: center; color: var(--dim); font-family: 'DM Mono', monospace; font-size: 13px; }
+</style>
 </head>
 <body>
-<div class="app">
 
-  <header>
-    <h1>🌿 Flower Tracker</h1>
-    <div class="status-pill" id="status-pill">Loading…</div>
-  </header>
-
+<header>
+  <div class="header-row">
+    <div class="logo">FreshFlower</div>
+    <div class="stat-pill"><strong id="stat-count">-</strong> variants &middot; <strong id="stat-groups">-</strong> search groups</div>
+  </div>
   <div class="filters">
-
-    <!-- Brand -->
-    <div class="filter-group">
-      <span class="filter-label">Brand</span>
-      <div class="brand-dropdown" id="brand-dropdown">
-        <button class="brand-btn" id="brand-btn">All brands ▾</button>
-        <div class="brand-popover" id="brand-popover">
-          <div class="brand-search">
-            <input type="text" id="brand-search-input" placeholder="Search brands…">
-          </div>
-          <div id="brand-list"></div>
-          <div class="brand-actions">
-            <button class="link-btn" id="select-all-btn">Select all</button>
-            <button class="link-btn" id="clear-all-btn">Clear all</button>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Store -->
-    <div class="filter-group">
-      <span class="filter-label">Store</span>
-      <div class="toggle-group">
-        <button class="tog-btn active" data-store="all">All</button>
-        <button class="tog-btn" data-store="cakehouse">Cake House</button>
-        <button class="tog-btn" data-store="harborside-sj">Harborside</button>
-      </div>
-    </div>
-
-    <!-- Type -->
-    <div class="filter-group">
-      <span class="filter-label">Type</span>
-      <div class="toggle-group">
-        <button class="lineage-btn" data-lineage="sativa">Sativa</button>
-        <button class="lineage-btn" data-lineage="indica">Indica</button>
-        <button class="lineage-btn" data-lineage="hybrid">Hybrid</button>
-        <button class="lineage-btn" data-lineage="cbd">CBD</button>
-      </div>
-    </div>
-
-    <!-- Favorites filter -->
-    <div class="filter-group">
-      <span class="filter-label">Show</span>
-      <button class="fav-filter-btn" id="fav-filter-btn">⭐ Favorites only</button>
-    </div>
-
-    <button class="reset-btn" id="reset-btn">Reset</button>
+    <select id="filter-store"><option value="">All stores</option></select>
+    <select id="filter-brand"><option value="">All brands</option></select>
+    <select id="filter-weight"><option value="">All weights</option></select>
+    <button class="clear-filters" id="clear-filters-btn">Clear filters</button>
   </div>
+</header>
 
-  <div class="sort-bar">
-    <span class="count-label"><span id="count-label">0</span> products</span>
-    <div class="sort-group">
-      <span class="filter-label">Sort</span>
-      <select id="sort-select">
-        <option value="fav-first">Favorites first</option>
-        <option value="brand">Brand A–Z</option>
-        <option value="date-desc">Date added (newest)</option>
-        <option value="date-asc">Date added (oldest)</option>
-        <option value="price-asc">Price low–high</option>
-        <option value="price-desc">Price high–low</option>
-        <option value="weight-asc">Weight low–high</option>
-        <option value="weight-desc">Weight high–low</option>
-      </select>
-    </div>
-  </div>
-
-  <div class="grid-wrap">
-    <div class="grid" id="grid">
-      <div class="state-msg"><div class="spinner"></div><br>Connecting…</div>
-    </div>
-  </div>
-
-</div>
-<div class="toast" id="toast"></div>
+<main id="main">
+  <div class="state-msg"><div class="spinner"></div><br>Loading&hellip;</div>
+</main>
 
 <script>
-// ── Config ────────────────────────────────────────────────────────────────────
+// -- Config --------------------------------------------------------------------
 const SUPABASE_URL  = "https://oapjuqurbfimxopjpqgj.supabase.co";
 const SUPABASE_ANON = "sb_publishable_B6dXNLCuGE3n3z5qazgdLg_ZE-S4ZLr";
-const MIN_WEIGHT_G  = 3.5;
-const NEW_DAYS      = 3;   // products first seen within N days show "New" badge
-// ─────────────────────────────────────────────────────────────────────────────
+const NEW_DAYS       = 3; // products first seen within N days get the "New" badge
+// --------------------------------------------------------------------------------
 
-const API = (path, opts = {}) => fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+const API = (path) => fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
   headers: {
-    "apikey":          SUPABASE_ANON,
-    "Authorization":   `Bearer ${SUPABASE_ANON}`,
-    "Content-Type":    "application/json",
-    // Non-public schemas are selected via headers, not a "schema.table" URL path.
-    "Accept-Profile":  "flower",
-    "Content-Profile": "flower",
-    "Prefer":          "return=representation",
-    ...opts.headers,
+    "apikey":         SUPABASE_ANON,
+    "Authorization":  `Bearer ${SUPABASE_ANON}`,
+    "Accept-Profile": "flower",
   },
-  ...opts,
 });
 
-// ── State ─────────────────────────────────────────────────────────────────────
-let allProducts    = [];
-let brands         = [];
-let favBrands      = new Set();   // brand names (lowercase) that are favorited
-let favProducts    = new Set();   // product_base_ids that are favorited
-let favAlerts      = new Set();   // product_base_ids with alerts on
-let favData        = [];          // raw rows from flower.favorites
-
-let selectedBrands = new Set();
-let activeStore    = "all";
-let activeLineages = new Set();
-let favsOnly       = false;
-let sortBy         = "fav-first";
-
-// ── API helpers ───────────────────────────────────────────────────────────────
+let allProducts = [];
+let filters = { store: "", brand: "", weight: "" };
 
 async function fetchProducts() {
+  // current_inventory view already joins in search_group title/store/brand/weight
+  // and filters to is_available + weight >= 3.5g.
   const res = await API(
-    `products?is_available=eq.true&weight_grams=gte.${MIN_WEIGHT_G}` +
-    `&select=jane_product_id,product_base_id,source,brand,strain,lineage,` +
-    `weight_grams,weight_label,price,thc_pct,product_url,image_url,first_seen_at` +
-    `&order=brand.asc,strain.asc,weight_grams.asc`
+    `current_inventory?select=jane_product_id,brand,strain,lineage,weight_grams,` +
+    `weight_label,price,thc_pct,product_url,first_seen_at,search_group_title,` +
+    `search_group_url,search_group_store,search_group_brand,search_group_weight` +
+    `&order=search_group_title.asc,strain.asc,weight_grams.asc`
   );
   if (!res.ok) throw new Error(`Products fetch failed: ${res.status}`);
   return res.json();
 }
 
-async function fetchFavorites() {
-  const res = await API(`favorites?select=*`);
-  if (!res.ok) throw new Error(`Favorites fetch failed: ${res.status}`);
-  return res.json();
+function escapeHtml(s) {
+  return String(s ?? "").replace(/[&<>"']/g, c => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+  }[c]));
 }
 
-function applyFavData(rows) {
-  favData     = rows;
-  favBrands   = new Set(rows.filter(r => r.type === "brand").map(r => r.brand?.toLowerCase()));
-  favProducts = new Set(rows.filter(r => r.type === "product").map(r => r.product_base_id));
-  favAlerts   = new Set(rows.filter(r => r.type === "product" && r.alert_enabled).map(r => r.product_base_id));
+function daysAgo(iso) {
+  return (Date.now() - new Date(iso).getTime()) / 86400000;
 }
 
-// ── Favorites mutations ───────────────────────────────────────────────────────
+function populateFilterOptions() {
+  const stores  = [...new Set(allProducts.map(p => p.search_group_store).filter(Boolean))].sort();
+  const brands  = [...new Set(allProducts.map(p => p.search_group_brand).filter(Boolean))].sort();
+  const weights = [...new Set(allProducts.map(p => p.search_group_weight).filter(Boolean))]
+    .sort((a, b) => parseFloat(a) - parseFloat(b));
 
-function showToast(msg) {
-  const t = document.getElementById("toast");
-  t.textContent = msg;
-  t.classList.add("show");
-  setTimeout(() => t.classList.remove("show"), 2200);
-}
-
-async function toggleBrandFav(brand) {
-  const key = brand.toLowerCase();
-  if (favBrands.has(key)) {
-    // Remove
-    const row = favData.find(r => r.type === "brand" && r.brand?.toLowerCase() === key);
-    if (row) {
-      await API(`favorites?id=eq.${row.id}`, { method: "DELETE" });
-      favBrands.delete(key);
-      favData = favData.filter(r => r.id !== row.id);
-      showToast(`Removed ${brand} from favorites`);
-    }
-  } else {
-    // Add
-    const res = await API(`favorites`, {
-      method: "POST",
-      body: JSON.stringify({ type: "brand", brand, alert_enabled: false }),
+  const fill = (id, values, current) => {
+    const sel = document.getElementById(id);
+    const placeholder = sel.options[0];
+    sel.innerHTML = "";
+    sel.appendChild(placeholder);
+    values.forEach(v => {
+      const opt = document.createElement("option");
+      opt.value = v; opt.textContent = v;
+      if (v === current) opt.selected = true;
+      sel.appendChild(opt);
     });
-    if (res.ok) {
-      const [row] = await res.json();
-      favBrands.add(key);
-      favData.push(row);
-      showToast(`⭐ ${brand} added to favorites`);
-    }
-  }
-  buildBrandList(document.getElementById("brand-search-input").value);
-  render();
-}
-
-async function toggleProductFav(product_base_id, brand, strain) {
-  if (favProducts.has(product_base_id)) {
-    const row = favData.find(r => r.type === "product" && r.product_base_id === product_base_id);
-    if (row) {
-      await API(`favorites?id=eq.${row.id}`, { method: "DELETE" });
-      favProducts.delete(product_base_id);
-      favAlerts.delete(product_base_id);
-      favData = favData.filter(r => r.id !== row.id);
-      showToast(`Removed ${strain} from favorites`);
-    }
-  } else {
-    const res = await API(`favorites`, {
-      method: "POST",
-      body: JSON.stringify({ type: "product", brand, strain, product_base_id, alert_enabled: true }),
-    });
-    if (res.ok) {
-      const [row] = await res.json();
-      favProducts.add(product_base_id);
-      favAlerts.add(product_base_id);
-      favData.push(row);
-      showToast(`⭐ ${strain} favorited — alerts on`);
-    }
-  }
-  render();
-}
-
-async function toggleProductAlert(product_base_id) {
-  const row = favData.find(r => r.type === "product" && r.product_base_id === product_base_id);
-  if (!row) return;
-  const newVal = !row.alert_enabled;
-  const res = await API(`favorites?id=eq.${row.id}`, {
-    method:  "PATCH",
-    body:    JSON.stringify({ alert_enabled: newVal }),
-  });
-  if (res.ok) {
-    row.alert_enabled = newVal;
-    if (newVal) favAlerts.add(product_base_id);
-    else        favAlerts.delete(product_base_id);
-    showToast(newVal ? "🔔 Alert on" : "🔕 Alert off");
-    render();
-  }
-}
-
-// ── Brand popover ─────────────────────────────────────────────────────────────
-
-function buildBrandList(filterText = "") {
-  const list  = document.getElementById("brand-list");
-  const lower = filterText.toLowerCase();
-  list.innerHTML = brands
-    .filter(b => b.toLowerCase().includes(lower))
-    .map(b => {
-      const isFav = favBrands.has(b.toLowerCase());
-      return `
-        <div class="brand-option">
-          <input type="checkbox" id="b-${CSS.escape(b)}" value="${b}"
-            ${!selectedBrands.size || selectedBrands.has(b) ? "checked" : ""}>
-          <label for="b-${CSS.escape(b)}">${b}</label>
-          <span class="brand-fav-star ${isFav ? "" : "unfav"}"
-            data-brand="${b}" title="${isFav ? "Unfavorite brand" : "Favorite brand"}">★</span>
-        </div>`;
-    }).join("");
-
-  list.querySelectorAll("input[type=checkbox]").forEach(cb => {
-    cb.addEventListener("change", () => {
-      if (cb.checked) selectedBrands.add(cb.value);
-      else selectedBrands.delete(cb.value);
-      if (selectedBrands.size === brands.length) selectedBrands.clear();
-      updateBrandBtn();
-      render();
-    });
-  });
-
-  list.querySelectorAll(".brand-fav-star").forEach(star => {
-    star.addEventListener("click", async e => {
-      e.stopPropagation();
-      await toggleBrandFav(star.dataset.brand);
-    });
-  });
-}
-
-function updateBrandBtn() {
-  const btn = document.getElementById("brand-btn");
-  if (!selectedBrands.size)      btn.textContent = "All brands ▾";
-  else if (selectedBrands.size === 1) btn.textContent = [...selectedBrands][0] + " ▾";
-  else btn.textContent = `${selectedBrands.size} brands ▾`;
-}
-
-// ── Render ────────────────────────────────────────────────────────────────────
-
-function lineageBadge(lineage = "") {
-  const l = lineage.toLowerCase();
-  if (l.includes("sativa")) return `<span class="badge badge-sativa">Sativa</span>`;
-  if (l.includes("indica")) return `<span class="badge badge-indica">Indica</span>`;
-  if (l.includes("hybrid")) return `<span class="badge badge-hybrid">Hybrid</span>`;
-  if (l.includes("cbd"))    return `<span class="badge badge-cbd">CBD</span>`;
-  if (lineage)              return `<span class="badge badge-other">${lineage}</span>`;
-  return "";
-}
-
-function formatDate(iso) {
-  if (!iso) return null;
-  const d = new Date(iso);
-  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-}
-
-function isNew(firstSeenAt) {
-  if (!firstSeenAt) return false;
-  return (Date.now() - new Date(firstSeenAt)) / 86400000 <= NEW_DAYS;
+  };
+  fill("filter-store", stores, filters.store);
+  fill("filter-brand", brands, filters.brand);
+  fill("filter-weight", weights, filters.weight);
 }
 
 function render() {
-  const grid = document.getElementById("grid");
+  const main = document.getElementById("main");
 
-  let filtered = allProducts.filter(p => {
-    if (selectedBrands.size && !selectedBrands.has(p.brand)) return false;
-    if (activeStore !== "all" && p.source !== activeStore)   return false;
-    if (activeLineages.size) {
-      const l = (p.lineage ?? "").toLowerCase();
-      if (![...activeLineages].some(al => l.includes(al))) return false;
-    }
-    if (favsOnly) {
-      const bf = favBrands.has((p.brand ?? "").toLowerCase());
-      const pf = favProducts.has(p.product_base_id);
-      if (!bf && !pf) return false;
-    }
-    return true;
-  });
+  const filtered = allProducts.filter(p =>
+    (!filters.store  || p.search_group_store  === filters.store) &&
+    (!filters.brand  || p.search_group_brand  === filters.brand) &&
+    (!filters.weight || p.search_group_weight === filters.weight)
+  );
 
-  // Sort
-  filtered.sort((a, b) => {
-    const pf = (p) => favProducts.has(p.product_base_id) ? 0 : favBrands.has((p.brand ?? "").toLowerCase()) ? 1 : 2;
-    switch (sortBy) {
-      case "fav-first":   return pf(a) - pf(b) || (a.brand ?? "").localeCompare(b.brand ?? "") || (a.strain ?? "").localeCompare(b.strain ?? "");
-      case "brand":       return (a.brand ?? "").localeCompare(b.brand ?? "") || (a.strain ?? "").localeCompare(b.strain ?? "");
-      case "date-desc":   return new Date(b.first_seen_at) - new Date(a.first_seen_at);
-      case "date-asc":    return new Date(a.first_seen_at) - new Date(b.first_seen_at);
-      case "price-asc":   return (a.price ?? Infinity) - (b.price ?? Infinity);
-      case "price-desc":  return (b.price ?? 0) - (a.price ?? 0);
-      case "weight-asc":  return (a.weight_grams ?? 0) - (b.weight_grams ?? 0);
-      case "weight-desc": return (b.weight_grams ?? 0) - (a.weight_grams ?? 0);
-    }
-  });
+  document.getElementById("stat-count").textContent = filtered.length;
 
-  document.getElementById("count-label").textContent = filtered.length;
-
-  if (!filtered.length) {
-    grid.innerHTML = `<div class="state-msg">No products match the current filters.</div>`;
+  if (filtered.length === 0) {
+    main.innerHTML = `<div class="empty">No products match the current filters.</div>`;
+    document.getElementById("stat-groups").textContent = "0";
     return;
   }
 
-  const storeLabel = { "cakehouse": "Cake House", "harborside-sj": "Harborside" };
+  // Group by search_group_title, preserving the sorted order already returned by the query.
+  const groups = new Map();
+  for (const p of filtered) {
+    const key = p.search_group_title || "Ungrouped";
+    if (!groups.has(key)) groups.set(key, { url: p.search_group_url, items: [] });
+    groups.get(key).items.push(p);
+  }
+  document.getElementById("stat-groups").textContent = groups.size;
 
-  grid.innerHTML = filtered.map(p => {
-    const isBrandFav   = favBrands.has((p.brand ?? "").toLowerCase());
-    const isProdFav    = favProducts.has(p.product_base_id);
-    const hasAlert     = favAlerts.has(p.product_base_id);
-    const fresh        = isNew(p.first_seen_at);
-    const dateStr      = formatDate(p.first_seen_at);
-    const price        = p.price != null ? `$${p.price.toFixed(2)}` : "—";
-    const weight       = p.weight_label ?? (p.weight_grams ? `${p.weight_grams}g` : "");
-    const store        = storeLabel[p.source] ?? p.source;
-    const cardClass    = isProdFav ? "card product-fav" : isBrandFav ? "card brand-fav" : "card";
-    const favStar      = isProdFav ? "⭐" : "☆";
-    const imgTag       = p.image_url
-      ? `<img class="card-img" src="${p.image_url}" alt="${p.strain}" loading="lazy">`
-      : `<div class="card-img-placeholder">🌿</div>`;
-
-    // Alert toggle only shows when product is favorited
-    const alertToggle = isProdFav
-      ? `<span style="font-size:11px;font-family:var(--font-ui);color:${hasAlert ? "var(--accent)" : "var(--muted)"};cursor:pointer;margin-left:auto;"
-           data-action="alert" data-base="${p.product_base_id}"
-           title="${hasAlert ? "Click to disable alert" : "Click to enable alert"}">
-           ${hasAlert ? "🔔 Alert on" : "🔕 Alert off"}
-         </span>`
-      : "";
-
-    return `
-      <div class="${cardClass}" data-base="${p.product_base_id}">
-        <div class="card-img-wrap">
-          ${imgTag}
-          <div class="img-badges">
-            ${fresh ? `<span class="new-badge">New</span>` : ""}
-            ${dateStr ? `<span class="date-badge">Added ${dateStr}</span>` : ""}
-          </div>
-          <button class="card-fav-btn" data-action="fav"
-            data-base="${p.product_base_id}" data-brand="${p.brand ?? ""}" data-strain="${p.strain ?? ""}"
-            title="${isProdFav ? "Remove from favorites" : "Add to favorites"}">${favStar}</button>
-        </div>
-        <div class="card-body">
-          <div class="card-brand">
-            ${isBrandFav ? `<span class="brand-star">★</span>` : ""}
-            ${p.brand ?? "—"}
-          </div>
-          <div class="card-strain">${p.strain ?? "—"}</div>
-          <div class="card-meta">
-            ${lineageBadge(p.lineage)}
-            <span class="badge-store">${store}</span>
-            ${alertToggle}
-          </div>
-          <div class="card-price-row">
-            <span class="card-price">${price}</span>
-            ${weight ? `<span class="card-weight">${weight}</span>` : ""}
-          </div>
-          ${p.product_url ? `<a class="card-link" href="${p.product_url}" target="_blank">View →</a>` : ""}
-        </div>
-      </div>`;
-  }).join("");
-
-  // Wire up card buttons
-  grid.querySelectorAll("[data-action='fav']").forEach(btn => {
-    btn.addEventListener("click", async e => {
-      e.preventDefault();
-      await toggleProductFav(btn.dataset.base, btn.dataset.brand, btn.dataset.strain);
-    });
-  });
-
-  grid.querySelectorAll("[data-action='alert']").forEach(el => {
-    el.addEventListener("click", async () => {
-      await toggleProductAlert(el.dataset.base);
-    });
-  });
+  let html = "";
+  for (const [title, group] of groups) {
+    html += `<div class="group">`;
+    html += `<div class="group-header">`;
+    if (group.url) {
+      html += `<a class="group-title" href="${escapeHtml(group.url)}" target="_blank" rel="noopener">${escapeHtml(title)} <span class="arrow">&#8599;</span></a>`;
+    } else {
+      html += `<div class="group-title">${escapeHtml(title)}</div>`;
+    }
+    html += `<span class="group-count">${group.items.length} item${group.items.length === 1 ? "" : "s"}</span>`;
+    html += `</div>`;
+    html += `<div class="row-list">`;
+    for (const p of group.items) {
+      const isNew = p.first_seen_at && daysAgo(p.first_seen_at) <= NEW_DAYS;
+      const addedLabel = p.first_seen_at
+        ? new Date(p.first_seen_at).toLocaleDateString(undefined, { month: "short", day: "numeric" })
+        : "-";
+      const thc = p.thc_pct != null ? `THC ${p.thc_pct}%` : "";
+      const href = p.product_url || "#";
+      html += `<a class="row" href="${escapeHtml(href)}" target="_blank" rel="noopener">`;
+      html += `  <div class="row-main">`;
+      html += `    <div class="row-strain">${escapeHtml(p.strain || "Unknown")}</div>`;
+      html += `    <div class="row-brand">${escapeHtml(p.brand || "")}</div>`;
+      html += `  </div>`;
+      html += `  <div class="row-thc">${escapeHtml(thc)}</div>`;
+      html += `  <div class="row-weight">${escapeHtml(p.weight_label || "")}</div>`;
+      html += `  <div class="row-price">$${p.price != null ? Number(p.price).toFixed(2) : "-"}</div>`;
+      html += `  <div class="row-added ${isNew ? "is-new" : "is-old"}">${isNew ? "New &middot; " : "Added "}${escapeHtml(addedLabel)}</div>`;
+      html += `</a>`;
+    }
+    html += `</div></div>`;
+  }
+  main.innerHTML = html;
 }
-
-// ── Init ──────────────────────────────────────────────────────────────────────
 
 async function init() {
   try {
-    [allProducts, favData] = await Promise.all([fetchProducts(), fetchFavorites()]);
-    applyFavData(favData);
-
-    brands = [...new Set(allProducts.map(p => p.brand).filter(Boolean))].sort();
-
-    const pill = document.getElementById("status-pill");
-    pill.textContent = `${allProducts.length} variants · ${new Date().toLocaleTimeString()}`;
-
-    buildBrandList();
+    allProducts = await fetchProducts();
+    populateFilterOptions();
     render();
   } catch (err) {
-    document.getElementById("grid").innerHTML =
-      `<div class="state-msg">⚠️ Could not load data:<br>${err.message}</div>`;
-    console.error(err);
+    document.getElementById("main").innerHTML =
+      `<div class="state-msg">Could not load data:<br>${escapeHtml(err.message)}</div>`;
   }
 }
 
-// ── Event wiring ──────────────────────────────────────────────────────────────
-
-// Brand popover
-document.getElementById("brand-btn").addEventListener("click", e => {
-  e.stopPropagation();
-  document.getElementById("brand-popover").classList.toggle("open");
-});
-document.addEventListener("click", () => document.getElementById("brand-popover").classList.remove("open"));
-document.getElementById("brand-popover").addEventListener("click", e => e.stopPropagation());
-document.getElementById("brand-search-input").addEventListener("input", e => buildBrandList(e.target.value));
-document.getElementById("select-all-btn").addEventListener("click", () => {
-  selectedBrands.clear(); buildBrandList(document.getElementById("brand-search-input").value); updateBrandBtn(); render();
-});
-document.getElementById("clear-all-btn").addEventListener("click", () => {
-  selectedBrands = new Set(brands); buildBrandList(document.getElementById("brand-search-input").value); updateBrandBtn(); render();
-});
-
-// Store
-document.querySelectorAll("[data-store]").forEach(btn => {
-  btn.addEventListener("click", () => {
-    document.querySelectorAll("[data-store]").forEach(b => b.classList.remove("active"));
-    btn.classList.add("active");
-    activeStore = btn.dataset.store;
-    render();
-  });
-});
-
-// Lineage
-document.querySelectorAll(".lineage-btn").forEach(btn => {
-  btn.addEventListener("click", () => {
-    const l = btn.dataset.lineage;
-    if (activeLineages.has(l)) { activeLineages.delete(l); btn.classList.remove("active"); }
-    else                        { activeLineages.add(l);    btn.classList.add("active"); }
-    render();
-  });
-});
-
-// Favorites filter
-document.getElementById("fav-filter-btn").addEventListener("click", function() {
-  favsOnly = !favsOnly;
-  this.classList.toggle("active", favsOnly);
+document.getElementById("filter-store").addEventListener("change", e => { filters.store = e.target.value; render(); });
+document.getElementById("filter-brand").addEventListener("change", e => { filters.brand = e.target.value; render(); });
+document.getElementById("filter-weight").addEventListener("change", e => { filters.weight = e.target.value; render(); });
+document.getElementById("clear-filters-btn").addEventListener("click", () => {
+  filters = { store: "", brand: "", weight: "" };
+  document.getElementById("filter-store").value = "";
+  document.getElementById("filter-brand").value = "";
+  document.getElementById("filter-weight").value = "";
   render();
-});
-
-// Sort
-document.getElementById("sort-select").addEventListener("change", e => { sortBy = e.target.value; render(); });
-
-// Reset
-document.getElementById("reset-btn").addEventListener("click", () => {
-  selectedBrands.clear(); activeStore = "all"; activeLineages.clear(); favsOnly = false; sortBy = "fav-first";
-  document.querySelectorAll("[data-store]").forEach(b => b.classList.toggle("active", b.dataset.store === "all"));
-  document.querySelectorAll(".lineage-btn").forEach(b => b.classList.remove("active"));
-  document.getElementById("fav-filter-btn").classList.remove("active");
-  document.getElementById("sort-select").value = "fav-first";
-  document.getElementById("brand-search-input").value = "";
-  buildBrandList(); updateBrandBtn(); render();
 });
 
 init();
