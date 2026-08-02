@@ -19,14 +19,86 @@ function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 const SEARCH_GROUPS = [
   {
     title:  "Cake House - Fig Farms - 3.5g",
-    // cakehousecannabis.com's store selection relies on a cookie a headless
-    // browser never gets, so it silently fell back to the wrong location. This
-    // URL hits the underlying iheartjane.com platform directly with the San
-    // Jose store id (6524) baked into the path — no store-selection ambiguity.
     url:    "https://www.iheartjane.com/stores/6524/the-cake-house-san-jose/menu/flower?filters%5Bbrand%5D%5B%5D=Fig%20Farms&filters%5Bavailable_weights%5D%5B%5D=eighth%20ounce",
-    store:  "Cake House",
-    brand:  "Fig Farms",
-    weight: "3.5g",
+    store:  "Cake House", brand: "Fig Farms", weight: "3.5g",
+  },
+  {
+    title:  "Cake House - 3C Farms - 3.5g",
+    url:    "https://www.iheartjane.com/stores/6524/the-cake-house-san-jose/menu/flower?filters%5Bavailable_weights%5D%5B%5D=eighth%20ounce&filters%5Bbrand%5D%5B%5D=3C%20Farms",
+    store:  "Cake House", brand: "3C Farms", weight: "3.5g",
+  },
+  {
+    title:  "Cake House - Cam - 3.5g",
+    url:    "https://www.iheartjane.com/stores/6524/the-cake-house-san-jose/menu/flower?filters%5Bavailable_weights%5D%5B%5D=eighth%20ounce&filters%5Bbrand%5D%5B%5D=CAM",
+    store:  "Cake House", brand: "Cam", weight: "3.5g",
+  },
+  {
+    title:  "Cake House - Cam - 7g",
+    url:    "https://www.iheartjane.com/stores/6524/the-cake-house-san-jose/menu/flower?filters%5Bavailable_weights%5D%5B%5D=quarter%20ounce&filters%5Bbrand%5D%5B%5D=CAM",
+    store:  "Cake House", brand: "Cam", weight: "7g",
+  },
+  {
+    title:  "Cake House - Cam - 14g",
+    url:    "https://www.iheartjane.com/stores/6524/the-cake-house-san-jose/menu/flower?filters%5Bavailable_weights%5D%5B%5D=half%20ounce&filters%5Bbrand%5D%5B%5D=CAM",
+    store:  "Cake House", brand: "Cam", weight: "14g",
+  },
+  {
+    title:  "Cake House - Cream of the Crop - 3.5g",
+    url:    "https://www.iheartjane.com/stores/6524/the-cake-house-san-jose/menu/flower?filters%5Bavailable_weights%5D%5B%5D=eighth%20ounce&filters%5Bbrand%5D%5B%5D=Cream%20of%20the%20Crop",
+    store:  "Cake House", brand: "Cream of the Crop", weight: "3.5g",
+  },
+  {
+    title:  "Cake House - Green Dragon - 3.5g",
+    url:    "https://www.iheartjane.com/stores/6524/the-cake-house-san-jose/menu/flower?filters%5Bavailable_weights%5D%5B%5D=eighth%20ounce&filters%5Bbrand%5D%5B%5D=Green%20Dragon",
+    store:  "Cake House", brand: "Green Dragon", weight: "3.5g",
+  },
+  {
+    title:  "Cake House - Maven - 3.5g",
+    url:    "https://www.iheartjane.com/stores/6524/the-cake-house-san-jose/menu/flower?filters%5Bavailable_weights%5D%5B%5D=eighth%20ounce&filters%5Bbrand%5D%5B%5D=Maven",
+    store:  "Cake House", brand: "Maven", weight: "3.5g",
+  },
+  {
+    title:  "Cake House - Pure Beauty - 3.5g",
+    url:    "https://www.iheartjane.com/stores/6524/the-cake-house-san-jose/menu/flower?filters%5Bavailable_weights%5D%5B%5D=eighth%20ounce&filters%5Bbrand%5D%5B%5D=Pure%20Beauty",
+    store:  "Cake House", brand: "Pure Beauty", weight: "3.5g",
+  },
+  {
+    title:  "Cake House - Seed Junky Genetics - 3.5g",
+    url:    "https://www.iheartjane.com/stores/6524/the-cake-house-san-jose/menu/flower?filters%5Bavailable_weights%5D%5B%5D=eighth%20ounce&filters%5Bbrand%5D%5B%5D=Seed%20Junky%20Genetics",
+    store:  "Cake House", brand: "Seed Junky Genetics", weight: "3.5g",
+  },
+  {
+    title:  "Cake House - Seed Junky Genetics - 7g",
+    url:    "https://www.iheartjane.com/stores/6524/the-cake-house-san-jose/menu/flower?filters%5Bbrand%5D%5B%5D=Seed%20Junky%20Genetics&filters%5Bavailable_weights%5D%5B%5D=quarter%20ounce",
+    store:  "Cake House", brand: "Seed Junky Genetics", weight: "7g",
+  },
+  {
+    title:  "Cake House - Seed Junky Genetics - 14g",
+    url:    "https://www.iheartjane.com/stores/6524/the-cake-house-san-jose/menu/flower?filters%5Bbrand%5D%5B%5D=Seed%20Junky%20Genetics&filters%5Bavailable_weights%5D%5B%5D=half%20ounce",
+    store:  "Cake House", brand: "Seed Junky Genetics", weight: "14g",
+  },
+  {
+    title:  "Cake House - Snowtill - 3.5g",
+    url:    "https://www.iheartjane.com/stores/6524/the-cake-house-san-jose/menu/flower?filters%5Bavailable_weights%5D%5B%5D=eighth%20ounce&filters%5Bbrand%5D%5B%5D=Snowtill",
+    store:  "Cake House", brand: "Snowtill", weight: "3.5g",
+  },
+  {
+    title:  "Cake House - Team Elite Genetics - 3.5g",
+    url:    "https://www.iheartjane.com/stores/6524/the-cake-house-san-jose/menu/flower?filters%5Bavailable_weights%5D%5B%5D=eighth%20ounce&filters%5Bbrand%5D%5B%5D=Team%20Elite%20Genetics",
+    store:  "Cake House", brand: "Team Elite Genetics", weight: "3.5g",
+  },
+  {
+    title:  "Cake House - UpNorth - 3.5g",
+    url:    "https://www.iheartjane.com/stores/6524/the-cake-house-san-jose/menu/flower?filters%5Bavailable_weights%5D%5B%5D=eighth%20ounce&filters%5Bbrand%5D%5B%5D=UpNorth%20Humboldt",
+    store:  "Cake House", brand: "UpNorth", weight: "3.5g",
+  },
+  {
+    title:  "Cake House - Wizard Trees - 3.5g",
+    // Using the iheartjane.com store-id URL rather than the cakehousecannabis.com
+    // one also given — the latter relies on a store-selection cookie a headless
+    // browser never has, which silently loaded the wrong location before.
+    url:    "https://www.iheartjane.com/stores/6524/the-cake-house-san-jose/menu/flower?filters%5Bavailable_weights%5D%5B%5D=eighth%20ounce&filters%5Bbrand%5D%5B%5D=Wizard%20Trees",
+    store:  "Cake House", brand: "Wizard Trees", weight: "3.5g",
   },
 ];
 
