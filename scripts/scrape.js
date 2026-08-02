@@ -19,7 +19,11 @@ function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 const SEARCH_GROUPS = [
   {
     title:  "Cake House - Fig Farms - 3.5g",
-    url:    "https://cakehousecannabis.com/order-weed/shop-all?category=Flower-6524&weight=eighth+ounce&brand=Fig+Farms",
+    // cakehousecannabis.com's store selection relies on a cookie a headless
+    // browser never gets, so it silently fell back to the wrong location. This
+    // URL hits the underlying iheartjane.com platform directly with the San
+    // Jose store id (6524) baked into the path — no store-selection ambiguity.
+    url:    "https://www.iheartjane.com/stores/6524/the-cake-house-san-jose/menu/flower?filters%5Bbrand%5D%5B%5D=Fig%20Farms&filters%5Bavailable_weights%5D%5B%5D=eighth%20ounce",
     store:  "Cake House",
     brand:  "Fig Farms",
     weight: "3.5g",
