@@ -107,6 +107,17 @@ const SEARCH_GROUPS = [
     url:    "https://www.exotixflower.com/shopsj?meadowQuery=categories%3D13532%26brands%3DNo%2BTill%2BKings&meadow-page=collections%2Fcategories%2F13532",
     store:  "Exotix", brand: "No Till Kings", weight: "3.5g", platform: "meadow",
   },
+  {
+    title:  "Exotix - Wood Wide",
+    // Exotix's site doesn't support filtering by weight (only brand/category),
+    // so this one URL returns every weight variant mixed together. Instead of a
+    // fixed weight, splitByWeight tells main() to bucket the results by each
+    // product's own extracted weight and create one search group per bucket
+    // dynamically (e.g. "Exotix - Wood Wide - 3.5g", "...- 7g", etc.) rather
+    // than relying on a separate pre-filtered URL per weight.
+    url:    "https://www.exotixflower.com/shopsj?meadowQuery=brands%3DWOOD%2BWIDE&meadow-page=collections%2Fcategories%2F13532",
+    store:  "Exotix", brand: "Wood Wide", platform: "meadow", splitByWeight: true,
+  },
 ];
 
 function parseWeightGrams(option = "") {
@@ -823,11 +834,35 @@ async function main() {
   try {
     let all = [];
     for (const group of SEARCH_GROUPS) {
-      const groupId = await upsertSearchGroup(group);
       const scrapeFn = group.platform === "meadow" ? scrapeMeadowGroup : scrapeSearchGroup;
-      const groupProducts = await scrapeFn(browser, group);
-      for (const p of groupProducts) p.search_group_id = groupId;
-      all = all.concat(groupProducts);
+
+      if (group.splitByWeight) {
+        // No per-weight URL available — scrape everything matching the brand,
+        // then bucket by each product's own extracted weight and create one
+        // search group per weight found, rather than one group for the config.
+        const rawProducts = await scrapeFn(browser, group);
+        const byWeight = new Map();
+        for (const p of rawProducts) {
+          const w = p.weight_label || "unknown";
+          if (!byWeight.has(w)) byWeight.set(w, []);
+          byWeight.get(w).push(p);
+        }
+        console.log(`  [Split] "${group.title}" → ${byWeight.size} weight bucket(s): ${JSON.stringify([...byWeight.keys()])}`);
+        for (const [weight, prods] of byWeight) {
+          const subGroup = {
+            title: `${group.store} - ${group.brand} - ${weight}`,
+            url: group.url, store: group.store, brand: group.brand, weight,
+          };
+          const groupId = await upsertSearchGroup(subGroup);
+          for (const p of prods) p.search_group_id = groupId;
+          all = all.concat(prods);
+        }
+      } else {
+        const groupId = await upsertSearchGroup(group);
+        const groupProducts = await scrapeFn(browser, group);
+        for (const p of groupProducts) p.search_group_id = groupId;
+        all = all.concat(groupProducts);
+      }
     }
     const dutchieProducts = await scrapeDutchie(browser);
     all = all.concat(dutchieProducts);
