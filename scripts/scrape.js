@@ -210,6 +210,19 @@ async function scrapeSearchGroup(browser, group) {
   function mergeBatch(batch) { for (const item of batch) collected.set(item.id, item); }
   mergeBatch(await page.evaluate(extractJaneCards));
 
+  // Sponsored ads for other brands get mixed into the results even with a brand
+  // filter active, so raw card count reaching the declared count doesn't mean
+  // we've actually found that many *matching* products yet — keep scrolling
+  // until the verified-match count catches up (or we run out of page/iterations).
+  const norm = s => (s ?? "").toLowerCase().trim();
+  const targetBrand = norm(group.brand);
+  const brandMatches = b => {
+    const nb = norm(b);
+    return !!nb && (nb.includes(targetBrand) || targetBrand.includes(nb));
+  };
+  const matchedCount = () =>
+    [...collected.values()].filter(p => brandMatches(p.nameParts[0])).length;
+
   // Small, pre-filtered result sets shouldn't need much scrolling, but do a
   // modest pass in case of any lazy loading.
   let pos = 0;
@@ -218,7 +231,7 @@ async function scrapeSearchGroup(browser, group) {
   let iterations = 0;
   const maxIterations = 40;
   while (pos <= maxScroll && iterations < maxIterations &&
-         (declaredCount == null || collected.size < declaredCount)) {
+         (declaredCount == null || matchedCount() < declaredCount)) {
     await page.evaluate((y) => window.scrollTo(0, y), pos);
     await sleep(500);
     mergeBatch(await page.evaluate(extractJaneCards));
@@ -227,16 +240,32 @@ async function scrapeSearchGroup(browser, group) {
     iterations++;
   }
 
-  // Products come back in DOM/discovery order — genuine filtered results first,
-  // "Flower For You" recommendations appended after. If we know the declared
-  // count, trim to exactly that many rather than guessing at container boundaries.
-  let products = Array.from(collected.values());
-  console.log(`  [SearchGroup] ${products.length} product cards found in DOM across ${iterations} scroll steps`);
-  if (declaredCount != null && products.length > declaredCount) {
-    console.log(`  [SearchGroup] trimming to declared count ${declaredCount} (extra are likely "Flower For You" recommendations)`);
-    products = products.slice(0, declaredCount);
-  } else if (declaredCount != null && products.length < declaredCount) {
-    console.log(`  [SearchGroup] WARNING: only found ${products.length} of ${declaredCount} declared — scrape may be incomplete`);
+  const allExtracted = Array.from(collected.values());
+  console.log(`  [SearchGroup] ${allExtracted.length} product cards found in DOM across ${iterations} scroll steps`);
+
+  let products = allExtracted.filter(p => brandMatches(p.nameParts[0]));
+  const rejectedBrands = [...new Set(
+    allExtracted.filter(p => !brandMatches(p.nameParts[0])).map(p => p.nameParts[0] || "(empty)")
+  )];
+  if (rejectedBrands.length > 0) {
+    console.log(`  [SearchGroup] excluded ${allExtracted.length - products.length} card(s) with non-matching brand: ${JSON.stringify(rejectedBrands)}`);
+  }
+
+  const seenKey = new Set();
+  const beforeDedupe = products.length;
+  products = products.filter(p => {
+    const key = `${norm(p.nameParts[0])}|${norm(p.nameParts[1])}|${norm(p.weight)}`;
+    if (seenKey.has(key)) return false;
+    seenKey.add(key);
+    return true;
+  });
+  if (beforeDedupe !== products.length) {
+    console.log(`  [SearchGroup] removed ${beforeDedupe - products.length} duplicate listing(s) of the same product`);
+  }
+
+  console.log(`  [SearchGroup] ${products.length} confirmed "${group.brand}" products after filtering + de-duping`);
+  if (declaredCount != null && products.length !== declaredCount) {
+    console.log(`  [SearchGroup] NOTE: brand-matched count (${products.length}) differs from page's declared count (${declaredCount}) — declared count may include sponsored items from other brands, or more scrolling may be needed`);
   }
 
   if (products.length > 0) {
