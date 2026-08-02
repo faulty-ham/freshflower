@@ -491,9 +491,30 @@ async function scrapeMeadowGroup(browser, group) {
   const page = await context.newPage();
 
   await page.goto(group.url, { waitUntil: "domcontentloaded", timeout: 60000 });
-  await sleep(3000);
+  await page.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => {});
+  await sleep(4000);
 
-  const diag = await page.evaluate(() => ({
+  // The menu content may be an embedded iframe (the URL's "meadowQuery"/
+  // "meadow-page" params suggest a widget rather than a full page) rather than
+  // part of the top-level document — if so, document.querySelectorAll on the
+  // main page finds almost nothing. Check every frame and target whichever one
+  // actually has content instead of assuming it's the main page.
+  const allFrames = page.frames();
+  console.log(`  [Meadow] page has ${allFrames.length} frame(s): ${JSON.stringify(allFrames.map(f => f.url()))}`);
+
+  let target = page.mainFrame();
+  let targetAnchorCount = await page.evaluate(() => document.querySelectorAll("a").length).catch(() => 0);
+  for (const frame of allFrames) {
+    if (frame === page.mainFrame()) continue;
+    try {
+      const count = await frame.evaluate(() => document.querySelectorAll("a").length);
+      if (count > targetAnchorCount) { targetAnchorCount = count; target = frame; }
+    } catch (e) { /* cross-origin or not ready — skip */ }
+  }
+  const usingIframe = target !== page.mainFrame();
+  console.log(`  [Meadow] using ${usingIframe ? `iframe (${target.url()})` : "main page"} — ${targetAnchorCount} anchor(s) found there`);
+
+  const diag = await target.evaluate(() => ({
     title: document.title,
     url: location.href,
     totalAnchors: document.querySelectorAll("a").length,
@@ -504,7 +525,7 @@ async function scrapeMeadowGroup(browser, group) {
   console.log(`  [Meadow] total <a> tags: ${diag.totalAnchors}`);
   console.log(`  [Meadow] body text sample:`, JSON.stringify(diag.bodyTextSample));
 
-  const declaredCount = await page.evaluate(() => {
+  const declaredCount = await target.evaluate(() => {
     const m = document.body.innerText.match(/(\d+)\s+(products?|results?|items?)\b/i);
     return m ? parseInt(m[1], 10) : null;
   });
@@ -522,19 +543,19 @@ async function scrapeMeadowGroup(browser, group) {
   const matchedCount = () =>
     [...collected.values()].filter(p => brandMatches(p.brand)).length;
 
-  mergeBatch(await page.evaluate(extractMeadowCards));
+  mergeBatch(await target.evaluate(extractMeadowCards));
 
   let pos = 0;
   const step = 700;
-  let maxScroll = await page.evaluate(() => document.scrollingElement.scrollHeight);
+  let maxScroll = await target.evaluate(() => document.scrollingElement.scrollHeight);
   let iterations = 0;
   const maxIterations = 40;
   while (pos <= maxScroll && iterations < maxIterations &&
          (declaredCount == null || matchedCount() < declaredCount)) {
-    await page.evaluate((y) => window.scrollTo(0, y), pos);
+    await target.evaluate((y) => window.scrollTo(0, y), pos);
     await sleep(500);
-    mergeBatch(await page.evaluate(extractMeadowCards));
-    maxScroll = Math.max(maxScroll, await page.evaluate(() => document.scrollingElement.scrollHeight));
+    mergeBatch(await target.evaluate(extractMeadowCards));
+    maxScroll = Math.max(maxScroll, await target.evaluate(() => document.scrollingElement.scrollHeight));
     pos += step;
     iterations++;
   }
