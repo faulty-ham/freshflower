@@ -174,8 +174,24 @@ async function scrapeSearchGroup(browser, group) {
   const page = await context.newPage();
 
   await page.goto(group.url, { waitUntil: "domcontentloaded", timeout: 60000 });
-  await page.waitForSelector('a[href*="/products/"]', { timeout: 20000 }).catch(() => {});
+  const foundProductSelector = await page.waitForSelector('a[href*="/products/"]', { timeout: 20000 })
+    .then(() => true).catch(() => false);
   await sleep(2500);
+
+  // Diagnostics — if this comes back empty, these tell us what actually happened
+  // (wrong domain/redirect, page needing JS interaction, different link pattern, etc.)
+  const diag = await page.evaluate(() => ({
+    title: document.title,
+    url: location.href,
+    totalAnchors: document.querySelectorAll("a").length,
+    productAnchors: document.querySelectorAll('a[href*="/products/"]').length,
+    bodyTextSample: document.body.innerText.slice(0, 500),
+  }));
+  console.log(`  [SearchGroup] page title: ${JSON.stringify(diag.title)}`);
+  console.log(`  [SearchGroup] final URL: ${diag.url}`);
+  console.log(`  [SearchGroup] waitForSelector found product link before timeout: ${foundProductSelector}`);
+  console.log(`  [SearchGroup] total <a> tags: ${diag.totalAnchors}, tags matching /products/: ${diag.productAnchors}`);
+  console.log(`  [SearchGroup] body text sample:`, JSON.stringify(diag.bodyTextSample));
 
   // The site itself states the true result count (e.g. "7 products") — use it
   // both to know when we've captured everything and to trim off the unrelated

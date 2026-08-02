@@ -161,8 +161,17 @@ create policy "public can delete favorites"
   on flower.favorites for delete using (true);
 
 -- Grant flower schema access to API roles
-grant usage on schema flower to anon, authenticated;
+grant usage on schema flower to anon, authenticated, service_role;
 grant select on all tables in schema flower to anon, authenticated;
 grant insert, update, delete on flower.favorites to anon, authenticated;
+-- service_role (used by the scraper's service key) needs full read/write on
+-- everything, not just favorites — existing tables happened to already have
+-- this from an earlier setup step, but search_groups didn't inherit it.
+grant select, insert, update, delete on all tables in schema flower to service_role;
+grant usage, select on all sequences in schema flower to service_role;
 alter default privileges in schema flower
   grant select on tables to anon, authenticated;
+alter default privileges in schema flower
+  grant select, insert, update, delete on tables to service_role;
+alter default privileges in schema flower
+  grant usage, select on sequences to service_role;
