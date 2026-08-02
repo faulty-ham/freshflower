@@ -20,77 +20,77 @@ const SEARCH_GROUPS = [
   {
     title:  "Cake House - Fig Farms - 3.5g",
     url:    "https://www.iheartjane.com/stores/6524/the-cake-house-san-jose/menu/flower?filters%5Bbrand%5D%5B%5D=Fig%20Farms&filters%5Bavailable_weights%5D%5B%5D=eighth%20ounce",
-    store:  "Cake House", brand: "Fig Farms", weight: "3.5g",
+    store:  "Cake House", brand: "Fig Farms", weight: "3.5g", platform: "jane",
   },
   {
     title:  "Cake House - 3C Farms - 3.5g",
     url:    "https://www.iheartjane.com/stores/6524/the-cake-house-san-jose/menu/flower?filters%5Bavailable_weights%5D%5B%5D=eighth%20ounce&filters%5Bbrand%5D%5B%5D=3C%20Farms",
-    store:  "Cake House", brand: "3C Farms", weight: "3.5g",
+    store:  "Cake House", brand: "3C Farms", weight: "3.5g", platform: "jane",
   },
   {
     title:  "Cake House - Cam - 3.5g",
     url:    "https://www.iheartjane.com/stores/6524/the-cake-house-san-jose/menu/flower?filters%5Bavailable_weights%5D%5B%5D=eighth%20ounce&filters%5Bbrand%5D%5B%5D=CAM",
-    store:  "Cake House", brand: "Cam", weight: "3.5g",
+    store:  "Cake House", brand: "Cam", weight: "3.5g", platform: "jane",
   },
   {
     title:  "Cake House - Cam - 7g",
     url:    "https://www.iheartjane.com/stores/6524/the-cake-house-san-jose/menu/flower?filters%5Bavailable_weights%5D%5B%5D=quarter%20ounce&filters%5Bbrand%5D%5B%5D=CAM",
-    store:  "Cake House", brand: "Cam", weight: "7g",
+    store:  "Cake House", brand: "Cam", weight: "7g", platform: "jane",
   },
   {
     title:  "Cake House - Cam - 14g",
     url:    "https://www.iheartjane.com/stores/6524/the-cake-house-san-jose/menu/flower?filters%5Bavailable_weights%5D%5B%5D=half%20ounce&filters%5Bbrand%5D%5B%5D=CAM",
-    store:  "Cake House", brand: "Cam", weight: "14g",
+    store:  "Cake House", brand: "Cam", weight: "14g", platform: "jane",
   },
   {
     title:  "Cake House - Cream of the Crop - 3.5g",
     url:    "https://www.iheartjane.com/stores/6524/the-cake-house-san-jose/menu/flower?filters%5Bavailable_weights%5D%5B%5D=eighth%20ounce&filters%5Bbrand%5D%5B%5D=Cream%20of%20the%20Crop",
-    store:  "Cake House", brand: "Cream of the Crop", weight: "3.5g",
+    store:  "Cake House", brand: "Cream of the Crop", weight: "3.5g", platform: "jane",
   },
   {
     title:  "Cake House - Green Dragon - 3.5g",
     url:    "https://www.iheartjane.com/stores/6524/the-cake-house-san-jose/menu/flower?filters%5Bavailable_weights%5D%5B%5D=eighth%20ounce&filters%5Bbrand%5D%5B%5D=Green%20Dragon",
-    store:  "Cake House", brand: "Green Dragon", weight: "3.5g",
+    store:  "Cake House", brand: "Green Dragon", weight: "3.5g", platform: "jane",
   },
   {
     title:  "Cake House - Maven - 3.5g",
     url:    "https://www.iheartjane.com/stores/6524/the-cake-house-san-jose/menu/flower?filters%5Bavailable_weights%5D%5B%5D=eighth%20ounce&filters%5Bbrand%5D%5B%5D=Maven",
-    store:  "Cake House", brand: "Maven", weight: "3.5g",
+    store:  "Cake House", brand: "Maven", weight: "3.5g", platform: "jane",
   },
   {
     title:  "Cake House - Pure Beauty - 3.5g",
     url:    "https://www.iheartjane.com/stores/6524/the-cake-house-san-jose/menu/flower?filters%5Bavailable_weights%5D%5B%5D=eighth%20ounce&filters%5Bbrand%5D%5B%5D=Pure%20Beauty",
-    store:  "Cake House", brand: "Pure Beauty", weight: "3.5g",
+    store:  "Cake House", brand: "Pure Beauty", weight: "3.5g", platform: "jane",
   },
   {
     title:  "Cake House - Seed Junky Genetics - 3.5g",
     url:    "https://www.iheartjane.com/stores/6524/the-cake-house-san-jose/menu/flower?filters%5Bavailable_weights%5D%5B%5D=eighth%20ounce&filters%5Bbrand%5D%5B%5D=Seed%20Junky%20Genetics",
-    store:  "Cake House", brand: "Seed Junky Genetics", weight: "3.5g",
+    store:  "Cake House", brand: "Seed Junky Genetics", weight: "3.5g", platform: "jane",
   },
   {
     title:  "Cake House - Seed Junky Genetics - 7g",
     url:    "https://www.iheartjane.com/stores/6524/the-cake-house-san-jose/menu/flower?filters%5Bbrand%5D%5B%5D=Seed%20Junky%20Genetics&filters%5Bavailable_weights%5D%5B%5D=quarter%20ounce",
-    store:  "Cake House", brand: "Seed Junky Genetics", weight: "7g",
+    store:  "Cake House", brand: "Seed Junky Genetics", weight: "7g", platform: "jane",
   },
   {
     title:  "Cake House - Seed Junky Genetics - 14g",
     url:    "https://www.iheartjane.com/stores/6524/the-cake-house-san-jose/menu/flower?filters%5Bbrand%5D%5B%5D=Seed%20Junky%20Genetics&filters%5Bavailable_weights%5D%5B%5D=half%20ounce",
-    store:  "Cake House", brand: "Seed Junky Genetics", weight: "14g",
+    store:  "Cake House", brand: "Seed Junky Genetics", weight: "14g", platform: "jane",
   },
   {
     title:  "Cake House - Snowtill - 3.5g",
     url:    "https://www.iheartjane.com/stores/6524/the-cake-house-san-jose/menu/flower?filters%5Bavailable_weights%5D%5B%5D=eighth%20ounce&filters%5Bbrand%5D%5B%5D=Snowtill",
-    store:  "Cake House", brand: "Snowtill", weight: "3.5g",
+    store:  "Cake House", brand: "Snowtill", weight: "3.5g", platform: "jane",
   },
   {
     title:  "Cake House - Team Elite Genetics - 3.5g",
     url:    "https://www.iheartjane.com/stores/6524/the-cake-house-san-jose/menu/flower?filters%5Bavailable_weights%5D%5B%5D=eighth%20ounce&filters%5Bbrand%5D%5B%5D=Team%20Elite%20Genetics",
-    store:  "Cake House", brand: "Team Elite Genetics", weight: "3.5g",
+    store:  "Cake House", brand: "Team Elite Genetics", weight: "3.5g", platform: "jane",
   },
   {
     title:  "Cake House - UpNorth - 3.5g",
     url:    "https://www.iheartjane.com/stores/6524/the-cake-house-san-jose/menu/flower?filters%5Bavailable_weights%5D%5B%5D=eighth%20ounce&filters%5Bbrand%5D%5B%5D=UpNorth%20Humboldt",
-    store:  "Cake House", brand: "UpNorth", weight: "3.5g",
+    store:  "Cake House", brand: "UpNorth", weight: "3.5g", platform: "jane",
   },
   {
     title:  "Cake House - Wizard Trees - 3.5g",
@@ -98,7 +98,14 @@ const SEARCH_GROUPS = [
     // one also given — the latter relies on a store-selection cookie a headless
     // browser never has, which silently loaded the wrong location before.
     url:    "https://www.iheartjane.com/stores/6524/the-cake-house-san-jose/menu/flower?filters%5Bavailable_weights%5D%5B%5D=eighth%20ounce&filters%5Bbrand%5D%5B%5D=Wizard%20Trees",
-    store:  "Cake House", brand: "Wizard Trees", weight: "3.5g",
+    store:  "Cake House", brand: "Wizard Trees", weight: "3.5g", platform: "jane",
+  },
+  {
+    title:  "Exotix - No Till Kings - 3.5g",
+    // Exotix runs on the Meadow platform (note "meadowQuery=" in the URL), not
+    // iHeartJane — different site, different card markup, needs its own extractor.
+    url:    "https://www.exotixflower.com/shopsj?meadowQuery=categories%3D13532%26brands%3DNo%2BTill%2BKings&meadow-page=collections%2Fcategories%2F13532",
+    store:  "Exotix", brand: "No Till Kings", weight: "3.5g", platform: "meadow",
   },
 ];
 
@@ -373,6 +380,223 @@ async function scrapeSearchGroup(browser, group) {
   });
 }
 
+// ── Meadow platform (e.g. Exotix) ──────────────────────────────────────────
+// Card structure, confirmed from real pasted Meadow menu text earlier:
+//   "{FULL NAME} - {BRAND}"      (sometimes absent)
+//   "$ORIGINAL"
+//   "$SALE"
+//   "XX% off"                    (only if discounted)
+//   "Gram" | "Item" | "N grams"  <- anchor: reliably present on every card
+//   "{BRAND}"
+//   "{FULL NAME}"                (includes weight + often an abbreviated brand suffix)
+//   ["THC ", "XX.XX%", "CBD ", "XX.XX%"]  (optional)
+// Each product card is wrapped in its own <a href>, but the URL scheme is
+// unknown up front, so anchors are identified by content (containing the
+// Gram/Item/weight-unit line) rather than by href pattern.
+function extractMeadowCards() {
+  function getTextLines(el) {
+    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, null);
+    const groups = [];
+    let node, lastParent = null, current = "";
+    while ((node = walker.nextNode())) {
+      const t = node.textContent.trim();
+      if (!t) continue;
+      const parent = node.parentElement;
+      if (parent === lastParent) {
+        current += " " + t;
+      } else {
+        if (current) groups.push(current.trim());
+        current = t;
+        lastParent = parent;
+      }
+    }
+    if (current) groups.push(current.trim());
+    return groups;
+  }
+
+  function stripTrailingBrand(name, brand) {
+    let nameWords = name.trim().split(/\s+/).filter(Boolean);
+    let brandWords = brand.trim().split(/\s+/).filter(Boolean).map(w => w.replace(/[.,]/g, "").toUpperCase());
+    let idx = brandWords.length - 1;
+    while (nameWords.length && idx >= 0) {
+      const lastWord = nameWords[nameWords.length - 1].replace(/[.,]/g, "").toUpperCase();
+      const brandWord = brandWords[idx];
+      if (!lastWord || !brandWord) break;
+      if (lastWord === brandWord || brandWord.startsWith(lastWord) || lastWord.startsWith(brandWord)) {
+        nameWords.pop();
+        idx--;
+      } else {
+        break;
+      }
+    }
+    return nameWords.join(" ");
+  }
+
+  const anchorRe = /^(Gram|Item|Eighth|Half Ounce|Ounce|Pre-?Roll|\d+(\.\d+)?\s*grams?)$/i;
+  const links = Array.from(document.querySelectorAll("a[href]"));
+  const results = [];
+
+  for (const link of links) {
+    const lines = getTextLines(link);
+    const anchorIdx = lines.findIndex(l => anchorRe.test(l));
+    if (anchorIdx === -1) continue; // not a product card — nav/category/other link
+
+    const brand    = lines[anchorIdx + 1] ? lines[anchorIdx + 1].trim() : "";
+    const fullName = lines[anchorIdx + 2] ? lines[anchorIdx + 2].trim() : "";
+    if (!brand || !fullName) continue;
+
+    // Price: nearest $ line scanning backward from the anchor, skipping blanks
+    // and "% off" lines — this lands on the sale price when discounted, or the
+    // only price otherwise (same rule validated against real Meadow text earlier).
+    let price = null;
+    for (let j = anchorIdx - 1; j >= Math.max(0, anchorIdx - 6); j--) {
+      const l = lines[j];
+      if (!l) continue;
+      if (/%\s*off$/i.test(l)) continue;
+      const m = l.match(/^\$([\d,.]+)/);
+      if (m) { price = parseFloat(m[1].replace(/,/g, "")); break; }
+      break;
+    }
+
+    const weightMatch = fullName.match(/(\d+(\.\d+)?)\s*(g|mg|oz)\b/i);
+    let weight = null;
+    let strainSource = fullName;
+    if (weightMatch) {
+      weight = weightMatch[1] + weightMatch[3].toLowerCase();
+      strainSource = fullName.replace(weightMatch[0], " ");
+    }
+    let strain = stripTrailingBrand(strainSource, brand).replace(/\s+/g, " ").trim();
+    if (!strain) strain = strainSource.trim();
+
+    const thcMatch = lines.join(" ").match(/THC\s*([\d.]+)%/i);
+    const thc = thcMatch ? parseFloat(thcMatch[1]) : null;
+
+    const img = link.querySelector("img");
+    const imageUrl = img?.src ?? null;
+    const href = link.href;
+    const idMatch = href.match(/(\d{4,})/); // best-effort numeric id from the URL
+    const id = idMatch ? idMatch[1] : href.split("/").filter(Boolean).pop() || strain;
+
+    results.push({ id, href, brand, strain, weight, price, thc, imageUrl, lines });
+  }
+
+  return results;
+}
+
+async function scrapeMeadowGroup(browser, group) {
+  console.log(`\n[Meadow] ${group.title}`);
+  const context = await browser.newContext({
+    userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+  });
+  const page = await context.newPage();
+
+  await page.goto(group.url, { waitUntil: "domcontentloaded", timeout: 60000 });
+  await sleep(3000);
+
+  const diag = await page.evaluate(() => ({
+    title: document.title,
+    url: location.href,
+    totalAnchors: document.querySelectorAll("a").length,
+    bodyTextSample: document.body.innerText.slice(0, 500),
+  }));
+  console.log(`  [Meadow] page title: ${JSON.stringify(diag.title)}`);
+  console.log(`  [Meadow] final URL: ${diag.url}`);
+  console.log(`  [Meadow] total <a> tags: ${diag.totalAnchors}`);
+  console.log(`  [Meadow] body text sample:`, JSON.stringify(diag.bodyTextSample));
+
+  const declaredCount = await page.evaluate(() => {
+    const m = document.body.innerText.match(/(\d+)\s+(products?|results?|items?)\b/i);
+    return m ? parseInt(m[1], 10) : null;
+  });
+  console.log(`  [Meadow] declared count on page: ${declaredCount ?? "not found"}`);
+
+  const norm = s => (s ?? "").toLowerCase().trim();
+  const targetBrand = norm(group.brand);
+  const brandMatches = b => {
+    const nb = norm(b);
+    return !!nb && (nb.includes(targetBrand) || targetBrand.includes(nb));
+  };
+
+  const collected = new Map();
+  function mergeBatch(batch) { for (const item of batch) collected.set(item.id, item); }
+  const matchedCount = () =>
+    [...collected.values()].filter(p => brandMatches(p.brand)).length;
+
+  mergeBatch(await page.evaluate(extractMeadowCards));
+
+  let pos = 0;
+  const step = 700;
+  let maxScroll = await page.evaluate(() => document.scrollingElement.scrollHeight);
+  let iterations = 0;
+  const maxIterations = 40;
+  while (pos <= maxScroll && iterations < maxIterations &&
+         (declaredCount == null || matchedCount() < declaredCount)) {
+    await page.evaluate((y) => window.scrollTo(0, y), pos);
+    await sleep(500);
+    mergeBatch(await page.evaluate(extractMeadowCards));
+    maxScroll = Math.max(maxScroll, await page.evaluate(() => document.scrollingElement.scrollHeight));
+    pos += step;
+    iterations++;
+  }
+
+  const allExtracted = Array.from(collected.values());
+  console.log(`  [Meadow] ${allExtracted.length} product cards found in DOM across ${iterations} scroll steps`);
+
+  let products = allExtracted.filter(p => brandMatches(p.brand));
+  const rejectedBrands = [...new Set(
+    allExtracted.filter(p => !brandMatches(p.brand)).map(p => p.brand || "(empty)")
+  )];
+  if (rejectedBrands.length > 0) {
+    console.log(`  [Meadow] excluded ${allExtracted.length - products.length} card(s) with non-matching brand: ${JSON.stringify(rejectedBrands)}`);
+  }
+
+  const seenKey = new Set();
+  const beforeDedupe = products.length;
+  products = products.filter(p => {
+    const key = `${norm(p.brand)}|${norm(p.strain)}|${norm(p.weight)}`;
+    if (seenKey.has(key)) return false;
+    seenKey.add(key);
+    return true;
+  });
+  if (beforeDedupe !== products.length) {
+    console.log(`  [Meadow] removed ${beforeDedupe - products.length} duplicate listing(s) of the same product`);
+  }
+
+  console.log(`  [Meadow] ${products.length} confirmed "${group.brand}" products after filtering + de-duping`);
+  if (declaredCount != null && products.length !== declaredCount) {
+    console.log(`  [Meadow] NOTE: matched count (${products.length}) differs from declared count (${declaredCount})`);
+  }
+
+  if (products.length > 0) {
+    console.log("  [Meadow] --- debug: first 3 products ---");
+    products.slice(0, 3).forEach((p, i) => {
+      console.log(`  [Meadow] #${i} lines:`, JSON.stringify(p.lines));
+      console.log(`  [Meadow] #${i} brand/strain/weight/price:`, p.brand, "|", p.strain, "|", p.weight, "|", p.price);
+    });
+  }
+
+  await context.close();
+
+  return products.map(p => {
+    const weightG = parseWeightGrams(p.weight) ?? parseWeightGrams(group.weight);
+    return {
+      source:          "exotix-sj",
+      jane_product_id: `meadow-${p.id}-${p.weight ?? "default"}`,
+      product_base_id: p.id,
+      brand:           p.brand,
+      strain:          p.strain,
+      lineage:         "",
+      weight_grams:    weightG,
+      weight_label:    p.weight ?? group.weight,
+      price:           p.price,
+      thc_pct:         p.thc,
+      cbd_pct:         null,
+      product_url:     p.href,
+      image_url:       p.imageUrl,
+      search_group_title: group.title,
+    };
+  });
+}
 
 // ── ② Harborside
 
@@ -579,7 +803,8 @@ async function main() {
     let all = [];
     for (const group of SEARCH_GROUPS) {
       const groupId = await upsertSearchGroup(group);
-      const groupProducts = await scrapeSearchGroup(browser, group);
+      const scrapeFn = group.platform === "meadow" ? scrapeMeadowGroup : scrapeSearchGroup;
+      const groupProducts = await scrapeFn(browser, group);
       for (const p of groupProducts) p.search_group_id = groupId;
       all = all.concat(groupProducts);
     }
