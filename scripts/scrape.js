@@ -118,6 +118,16 @@ const SEARCH_GROUPS = [
     url:    "https://www.exotixflower.com/shopsj?meadowQuery=brands%3DWOOD%2BWIDE&meadow-page=collections%2Fcategories%2F13532",
     store:  "Exotix", brand: "Wood Wide", platform: "meadow", splitByWeight: true,
   },
+  {
+    title:  "Exotix - Maven",
+    url:    "https://www.exotixflower.com/shopsj?meadowQuery=brands%3DMaven&meadow-page=collections%2Fcategories%2F13532",
+    store:  "Exotix", brand: "Maven", platform: "meadow", splitByWeight: true,
+  },
+  {
+    title:  "Exotix - Moon Valley Organics",
+    url:    "https://www.exotixflower.com/shopsj?meadowQuery=brands%3DMoon%2BValley%2BOrganics&meadow-page=collections%2Fcategories%2F13532",
+    store:  "Exotix", brand: "Moon Valley Organics", platform: "meadow", splitByWeight: true,
+  },
 ];
 
 function parseWeightGrams(option = "") {
@@ -443,6 +453,38 @@ function extractMeadowCards() {
     return nameWords.join(" ");
   }
 
+  function stripLeadingBrand(name, brand) {
+    let nameWords = name.trim().split(/\s+/).filter(Boolean);
+    let brandWords = brand.trim().split(/\s+/).filter(Boolean).map(w => w.replace(/[.,]/g, "").toUpperCase());
+    let idx = 0;
+    while (nameWords.length && idx < brandWords.length) {
+      const firstWord = nameWords[0].replace(/[.,]/g, "").toUpperCase();
+      const brandWord = brandWords[idx];
+      if (!firstWord || !brandWord) break;
+      if (firstWord === brandWord || brandWord.startsWith(firstWord) || firstWord.startsWith(brandWord)) {
+        nameWords.shift();
+        idx++;
+      } else {
+        break;
+      }
+    }
+    return nameWords.join(" ");
+  }
+
+  // Some product titles have the brand at the end ("WOODZY 1G WOOD WIDE"),
+  // others at the start ("WOOD WIDE NEONZ") — real inconsistency in the site's
+  // own data, not a fixed pattern. Try trailing first (matches more titles);
+  // only try leading if trailing found nothing, to avoid a fuzzy-match trap
+  // like "WOODZY" wrongly getting treated as starting with brand word "WOOD".
+  function stripBrandFuzzy(name, brand) {
+    const trailingResult = stripTrailingBrand(name, brand);
+    const originalWordCount = name.trim().split(/\s+/).filter(Boolean).length;
+    if (trailingResult.split(/\s+/).filter(Boolean).length < originalWordCount) {
+      return trailingResult;
+    }
+    return stripLeadingBrand(name, brand);
+  }
+
   // Look for a percentage value belonging to a "THC"/"CBD" label, whether it's
   // on the same line ("THC 26.66%") or the label and value are separate lines
   // ("THC", "19.1215%") — both formats have been seen on real Meadow pages.
@@ -499,7 +541,7 @@ function extractMeadowCards() {
       weight = weightMatch[1] + weightMatch[3].toLowerCase();
       strainSource = fullName.replace(weightMatch[0], " ");
     }
-    let strain = stripTrailingBrand(strainSource, brand).replace(/\s+/g, " ").trim();
+    let strain = stripBrandFuzzy(strainSource, brand).replace(/\s+/g, " ").trim();
     if (!strain) strain = strainSource.trim();
 
     const thc = findPercentAfterLabel(lines, "THC", i + 3, 6);
