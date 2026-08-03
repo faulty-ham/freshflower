@@ -158,12 +158,11 @@ const SEARCH_GROUPS = [
   },
   {
     title:  "Haze - Fig Farms - 3.5g",
-    // haze420.com's "filters[...]" query param format matches iHeartJane's
-    // convention exactly (same as Cake House) — treating it as a Jane store.
-    // If this loads the wrong location (same store-selection-cookie issue
-    // cakehousecannabis.com had), we'll switch to a direct iheartjane.com/
-    // stores/{id}/... URL like we did there.
-    url:    "https://haze420.com/menu-ordering/menu/flower?filters%5Bavailable_weights%5D%5B%5D=eighth%20ounce&filters%5Bbrand%5D%5B%5D=Fig%20Farms",
+    // haze420.com turned out to gate the menu behind a location picker that
+    // wasn't reliably click-through-able headlessly. Same fix as Cake House:
+    // hit the underlying iheartjane.com platform directly with the store id
+    // (26) baked into the path instead.
+    url:    "https://www.iheartjane.com/stores/26/haze-dispensary-almaden-rd/menu?filters%5Bavailable_weights%5D%5B%5D=eighth%20ounce&filters%5Bbrand%5D%5B%5D=Fig%20Farms",
     store:  "Haze", brand: "Fig Farms", weight: "3.5g", platform: "jane",
   },
 ];
