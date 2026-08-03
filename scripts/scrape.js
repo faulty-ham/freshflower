@@ -156,6 +156,16 @@ const SEARCH_GROUPS = [
     url:    "https://www.exotixflower.com/shopsj?meadowQuery=brands%3DTeds%2BBudz&meadow-page=collections%2Fcategories%2F13532",
     store:  "Exotix", brand: "Teds Budz", platform: "meadow", splitByWeight: true,
   },
+  {
+    title:  "Haze - Fig Farms - 3.5g",
+    // haze420.com's "filters[...]" query param format matches iHeartJane's
+    // convention exactly (same as Cake House) — treating it as a Jane store.
+    // If this loads the wrong location (same store-selection-cookie issue
+    // cakehousecannabis.com had), we'll switch to a direct iheartjane.com/
+    // stores/{id}/... URL like we did there.
+    url:    "https://haze420.com/menu-ordering/menu/flower?filters%5Bavailable_weights%5D%5B%5D=eighth%20ounce&filters%5Bbrand%5D%5B%5D=Fig%20Farms",
+    store:  "Haze", brand: "Fig Farms", weight: "3.5g", platform: "jane",
+  },
 ];
 
 function parseWeightGrams(option = "") {
