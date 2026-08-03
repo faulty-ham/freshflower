@@ -16,6 +16,7 @@
   --amber:  #f0a832; --amber-dim: rgba(240,168,50,0.12);
   --teal:   #2dd4a0; --teal-dim:  rgba(45,212,160,0.10);
   --coral:  #f06060; --coral-dim: rgba(240,96,96,0.10);
+  --blue:   #4a90e2; --blue-dim:  rgba(74,144,226,0.12);
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
 html { font-size: 100%; }
@@ -81,16 +82,17 @@ main { max-width: 900px; margin: 0 auto; padding: 20px; }
 .row:hover { background: var(--bg2); }
 .row-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .row-strain { font-size: 14px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.row-brand { font-size: 11px; color: var(--muted); font-family: 'DM Mono', monospace; }
 .row-thc { font-size: 11px; color: var(--dim); font-family: 'DM Mono', monospace; white-space: nowrap; }
 .row-weight { font-size: 12px; color: var(--muted); font-family: 'DM Mono', monospace; white-space: nowrap; }
-.row-price { font-size: 14px; font-weight: 700; font-family: 'DM Mono', monospace; color: var(--teal); white-space: nowrap; }
+.row-price { font-size: 14px; font-weight: 700; font-family: 'DM Mono', monospace; color: var(--text); white-space: nowrap; }
 .row-added {
   font-size: 10px; font-family: 'DM Mono', monospace; padding: 3px 7px; border-radius: 100px;
   white-space: nowrap; text-align: center;
 }
-.row-added.is-new  { background: var(--teal-dim);  color: var(--teal); }
-.row-added.is-old   { background: var(--bg3); color: var(--dim); border: 1px solid var(--border); }
+.row-added.age-fresh  { background: var(--teal-dim);  color: var(--teal); }
+.row-added.age-recent { background: var(--blue-dim);  color: var(--blue); }
+.row-added.age-aging  { background: var(--amber-dim); color: var(--amber); }
+.row-added.age-stale  { background: var(--coral-dim); color: var(--coral); }
 
 @media (max-width: 640px) {
   .row { grid-template-columns: 1fr auto auto; row-gap: 4px; }
@@ -123,7 +125,7 @@ main { max-width: 900px; margin: 0 auto; padding: 20px; }
 // -- Config --------------------------------------------------------------------
 const SUPABASE_URL  = "https://oapjuqurbfimxopjpqgj.supabase.co";
 const SUPABASE_ANON = "sb_publishable_B6dXNLCuGE3n3z5qazgdLg_ZE-S4ZLr";
-const NEW_DAYS       = 3; // products first seen within N days get the "New" badge
+// (age color tiers are defined inline in render(): <=30d green, <=60d blue, <=90d amber, older red)
 // --------------------------------------------------------------------------------
 
 const API = (path) => fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
@@ -222,7 +224,14 @@ function render() {
     html += `</div>`;
     html += `<div class="row-list">`;
     for (const p of group.items) {
-      const isNew = p.first_seen_at && daysAgo(p.first_seen_at) <= NEW_DAYS;
+      const ageDays = p.first_seen_at ? daysAgo(p.first_seen_at) : null;
+      let ageClass = "age-stale";
+      if (ageDays != null) {
+        if (ageDays <= 30) ageClass = "age-fresh";
+        else if (ageDays <= 60) ageClass = "age-recent";
+        else if (ageDays <= 90) ageClass = "age-aging";
+        else ageClass = "age-stale";
+      }
       const addedLabel = p.first_seen_at
         ? new Date(p.first_seen_at).toLocaleDateString(undefined, { month: "short", day: "numeric" })
         : "-";
@@ -231,12 +240,11 @@ function render() {
       html += `<a class="row" href="${escapeHtml(href)}" target="_blank" rel="noopener">`;
       html += `  <div class="row-main">`;
       html += `    <div class="row-strain">${escapeHtml(p.strain || "Unknown")}</div>`;
-      html += `    <div class="row-brand">${escapeHtml(p.brand || "")}</div>`;
       html += `  </div>`;
       html += `  <div class="row-thc">${escapeHtml(thc)}</div>`;
       html += `  <div class="row-weight">${escapeHtml(p.weight_label || "")}</div>`;
       html += `  <div class="row-price">$${p.price != null ? Number(p.price).toFixed(2) : "-"}</div>`;
-      html += `  <div class="row-added ${isNew ? "is-new" : "is-old"}">${isNew ? "New &middot; " : "Added "}${escapeHtml(addedLabel)}</div>`;
+      html += `  <div class="row-added ${ageClass}">Added ${escapeHtml(addedLabel)}</div>`;
       html += `</a>`;
     }
     html += `</div></div>`;

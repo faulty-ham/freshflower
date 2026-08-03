@@ -435,24 +435,6 @@ function extractMeadowCards() {
     return groups;
   }
 
-  function stripTrailingBrand(name, brand) {
-    let nameWords = name.trim().split(/\s+/).filter(Boolean);
-    let brandWords = brand.trim().split(/\s+/).filter(Boolean).map(w => w.replace(/[.,]/g, "").toUpperCase());
-    let idx = brandWords.length - 1;
-    while (nameWords.length && idx >= 0) {
-      const lastWord = nameWords[nameWords.length - 1].replace(/[.,]/g, "").toUpperCase();
-      const brandWord = brandWords[idx];
-      if (!lastWord || !brandWord) break;
-      if (lastWord === brandWord || brandWord.startsWith(lastWord) || lastWord.startsWith(brandWord)) {
-        nameWords.pop();
-        idx--;
-      } else {
-        break;
-      }
-    }
-    return nameWords.join(" ");
-  }
-
   function stripLeadingBrand(name, brand) {
     let nameWords = name.trim().split(/\s+/).filter(Boolean);
     let brandWords = brand.trim().split(/\s+/).filter(Boolean).map(w => w.replace(/[.,]/g, "").toUpperCase());
@@ -471,18 +453,56 @@ function extractMeadowCards() {
     return nameWords.join(" ");
   }
 
-  // Some product titles have the brand at the end ("WOODZY 1G WOOD WIDE"),
-  // others at the start ("WOOD WIDE NEONZ") — real inconsistency in the site's
-  // own data, not a fixed pattern. Try trailing first (matches more titles);
-  // only try leading if trailing found nothing, to avoid a fuzzy-match trap
-  // like "WOODZY" wrongly getting treated as starting with brand word "WOOD".
-  function stripBrandFuzzy(name, brand) {
-    const trailingResult = stripTrailingBrand(name, brand);
-    const originalWordCount = name.trim().split(/\s+/).filter(Boolean).length;
-    if (trailingResult.split(/\s+/).filter(Boolean).length < originalWordCount) {
-      return trailingResult;
+  // Brand mentions in titles are sometimes truncated to just the brand's
+  // leading words (e.g. "Moon Valley" for the full brand "Moon Valley
+  // Organics") rather than the whole thing. Tries matching the trailing N
+  // words of the name against the first N words of the brand, largest N
+  // first, so it catches both full and partial brand mentions in one pass.
+  function stripTrailingBrandPartial(name, brand) {
+    const nameWords = name.trim().split(/\s+/).filter(Boolean);
+    const brandWords = brand.trim().split(/\s+/).filter(Boolean).map(w => w.replace(/[.,]/g, "").toUpperCase());
+    for (let n = Math.min(nameWords.length, brandWords.length); n >= 1; n--) {
+      const tail = nameWords.slice(nameWords.length - n);
+      const brandPrefix = brandWords.slice(0, n);
+      const matches = tail.every((w, i) => {
+        const wu = w.replace(/[.,]/g, "").toUpperCase();
+        const bu = brandPrefix[i];
+        return wu === bu || bu.startsWith(wu) || wu.startsWith(bu);
+      });
+      if (matches) return nameWords.slice(0, nameWords.length - n).join(" ");
     }
-    return stripLeadingBrand(name, brand);
+    return name;
+  }
+
+  // Handles: brand at the end, possibly truncated ("... Moon Valley" for
+  // "Moon Valley Organics"); a cultivation/product-type descriptor phrase
+  // wedged between strain and brand ("... Living Soil Moon Valley"); and
+  // brand at the start ("Wood Wide Neonz"). Real inconsistency in the site's
+  // own data, not one fixed pattern.
+  function cleanStrainName(strainSource, brand) {
+    const original = strainSource.trim();
+    let s = stripTrailingBrandPartial(original, brand);
+    s = s.replace(/\s*(living soil flower|living soil|flower)\s*$/i, "").trim();
+
+    // Removing the descriptor can expose more brand suffix underneath
+    // ("... Living Soil Moon Valley" → strip "Moon Valley" → "... Living
+    // Soil" → strip descriptor → strain — but do the brand check once more
+    // in case of the reverse order). Guard against a fuzzy single-word match
+    // wiping the name down to nothing (e.g. "WOODZY" matching brand word
+    // "WOOD") by rejecting an all-the-way-to-empty result.
+    const beforeSecondPass = s;
+    const secondPass = stripTrailingBrandPartial(s, brand).trim();
+    if (secondPass.length > 0) s = secondPass;
+    else s = beforeSecondPass;
+
+    if (s.trim() === original) {
+      // Nothing stripped from the trailing side at all — try a leading
+      // brand mention instead ("Wood Wide Neonz" style prefixed titles).
+      s = stripLeadingBrand(s, brand);
+    }
+
+    s = s.replace(/\s+/g, " ").trim();
+    return s || original;
   }
 
   // Look for a percentage value belonging to a "THC"/"CBD" label, whether it's
@@ -541,7 +561,7 @@ function extractMeadowCards() {
       weight = weightMatch[1] + weightMatch[3].toLowerCase();
       strainSource = fullName.replace(weightMatch[0], " ");
     }
-    let strain = stripBrandFuzzy(strainSource, brand).replace(/\s+/g, " ").trim();
+    let strain = cleanStrainName(strainSource, brand).replace(/\s+/g, " ").trim();
     if (!strain) strain = strainSource.trim();
 
     const thc = findPercentAfterLabel(lines, "THC", i + 3, 6);
