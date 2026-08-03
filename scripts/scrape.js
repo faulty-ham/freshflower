@@ -128,6 +128,34 @@ const SEARCH_GROUPS = [
     url:    "https://www.exotixflower.com/shopsj?meadowQuery=brands%3DMoon%2BValley%2BOrganics&meadow-page=collections%2Fcategories%2F13532",
     store:  "Exotix", brand: "Moon Valley Organics", platform: "meadow", splitByWeight: true,
   },
+  {
+    title:  "Exotix - Seed Junky",
+    url:    "https://www.exotixflower.com/shopsj?meadowQuery=brands%3DSeed%2BJunky&meadow-page=collections%2Fcategories%2F13532",
+    store:  "Exotix", brand: "Seed Junky", platform: "meadow", splitByWeight: true,
+  },
+  {
+    title:  "Exotix - Snowtill Organics",
+    url:    "https://www.exotixflower.com/shopsj?meadowQuery=brands%3DSnowtill%2BOrganics&meadow-page=collections%2Fcategories%2F13532",
+    store:  "Exotix", brand: "Snowtill Organics", platform: "meadow", splitByWeight: true,
+  },
+  {
+    title:  "Exotix - Team Elite Genetics",
+    url:    "https://www.exotixflower.com/shopsj?meadowQuery=brands%3DTEAM%2BELITE%2BGENETICS&meadow-page=collections%2Fcategories%2F13532",
+    store:  "Exotix", brand: "Team Elite Genetics", platform: "meadow", splitByWeight: true,
+  },
+  {
+    title:  "Exotix - Top Shelf Cultivation",
+    url:    "https://www.exotixflower.com/shopsj?meadowQuery=brands%3DTOP%2BSHELF%2BCULTIVATION&meadow-page=collections%2Fcategories%2F13532",
+    store:  "Exotix", brand: "Top Shelf Cultivation", platform: "meadow", splitByWeight: true,
+  },
+  {
+    title:  "Exotix - Teds Budz",
+    // Note: you wrote "Teds Buds" but the URL param (and presumably the
+    // site's actual brand spelling) is "Teds Budz" — used that spelling here
+    // so brand-matching against the real scraped data actually works.
+    url:    "https://www.exotixflower.com/shopsj?meadowQuery=brands%3DTeds%2BBudz&meadow-page=collections%2Fcategories%2F13532",
+    store:  "Exotix", brand: "Teds Budz", platform: "meadow", splitByWeight: true,
+  },
 ];
 
 function parseWeightGrams(option = "") {
@@ -481,23 +509,38 @@ function extractMeadowCards() {
   // own data, not one fixed pattern.
   function cleanStrainName(strainSource, brand) {
     const original = strainSource.trim();
+    const wordCount = s => s.trim().split(/\s+/).filter(Boolean).length;
+    const originalWords = wordCount(original);
+
+    // 1) Try a trailing brand match first (before removing any descriptor),
+    //    since brand may sit immediately after the strain name.
     let s = stripTrailingBrandPartial(original, brand);
+    let brandFoundTrailing = wordCount(s) < originalWords;
+
+    // 2) Strip a trailing cultivation/product-type descriptor phrase.
+    const beforeDescriptor = s;
     s = s.replace(/\s*(living soil flower|living soil|flower)\s*$/i, "").trim();
+    const descriptorRemoved = s !== beforeDescriptor;
 
-    // Removing the descriptor can expose more brand suffix underneath
-    // ("... Living Soil Moon Valley" → strip "Moon Valley" → "... Living
-    // Soil" → strip descriptor → strain — but do the brand check once more
-    // in case of the reverse order). Guard against a fuzzy single-word match
-    // wiping the name down to nothing (e.g. "WOODZY" matching brand word
-    // "WOOD") by rejecting an all-the-way-to-empty result.
-    const beforeSecondPass = s;
-    const secondPass = stripTrailingBrandPartial(s, brand).trim();
-    if (secondPass.length > 0) s = secondPass;
-    else s = beforeSecondPass;
+    // 3) If a descriptor was removed, brand might be exposed underneath it —
+    //    try trailing-brand-strip once more. Guard against a fuzzy single-word
+    //    match wiping everything (e.g. "WOODZY" matching brand word "WOOD")
+    //    by only accepting a strictly shorter, non-empty result.
+    if (descriptorRemoved) {
+      const beforeWords = wordCount(s);
+      const secondPass = stripTrailingBrandPartial(s, brand).trim();
+      if (secondPass.length > 0 && wordCount(secondPass) < beforeWords) {
+        s = secondPass;
+        brandFoundTrailing = true;
+      }
+    }
 
-    if (s.trim() === original) {
-      // Nothing stripped from the trailing side at all — try a leading
-      // brand mention instead ("Wood Wide Neonz" style prefixed titles).
+    // 4) Brand never found on the trailing side (regardless of whether a
+    //    descriptor was removed) — try a leading mention instead, e.g.
+    //    "Wood Wide Neonz" or "No Till Kings Gelato #41 Living Soil Flower"
+    //    (descriptor strips first, leaving "No Till Kings Gelato #41" with
+    //    the brand still sitting at the front).
+    if (!brandFoundTrailing) {
       s = stripLeadingBrand(s, brand);
     }
 
