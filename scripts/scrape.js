@@ -316,13 +316,36 @@ async function scrapeSearchGroup(browser, group) {
   const page = await context.newPage();
 
   await page.goto(group.url, { waitUntil: "domcontentloaded", timeout: 60000 });
-  const foundProductSelector = await page.waitForSelector('a[href*="/products/"]', { timeout: 20000 })
-    .then(() => true).catch(() => false);
+  await page.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => {});
   await sleep(2500);
+
+  // Some sites (e.g. custom storefronts wrapping a Jane menu, same pattern as
+  // Exotix wrapping Meadow) embed the actual menu in an iframe rather than
+  // hosting it directly — in that case document.querySelectorAll on the main
+  // page finds none of the real product links. Check every frame and target
+  // whichever one actually has product links, falling back to the main page.
+  const allFrames = page.frames();
+  let target = page.mainFrame();
+  let targetProductCount = await page.evaluate(() => document.querySelectorAll('a[href*="/products/"]').length).catch(() => 0);
+  for (const frame of allFrames) {
+    if (frame === page.mainFrame()) continue;
+    try {
+      const count = await frame.evaluate(() => document.querySelectorAll('a[href*="/products/"]').length);
+      if (count > targetProductCount) { targetProductCount = count; target = frame; }
+    } catch (e) { /* cross-origin or not ready — skip */ }
+  }
+  const usingIframe = target !== page.mainFrame();
+  if (allFrames.length > 1) {
+    console.log(`  [SearchGroup] page has ${allFrames.length} frame(s): ${JSON.stringify(allFrames.map(f => f.url()))}`);
+    console.log(`  [SearchGroup] using ${usingIframe ? `iframe (${target.url()})` : "main page"} — ${targetProductCount} product link(s) found there`);
+  }
+
+  const foundProductSelector = await target.waitForSelector('a[href*="/products/"]', { timeout: 20000 })
+    .then(() => true).catch(() => false);
 
   // Diagnostics — if this comes back empty, these tell us what actually happened
   // (wrong domain/redirect, page needing JS interaction, different link pattern, etc.)
-  const diag = await page.evaluate(() => ({
+  const diag = await target.evaluate(() => ({
     title: document.title,
     url: location.href,
     totalAnchors: document.querySelectorAll("a").length,
@@ -335,24 +358,19 @@ async function scrapeSearchGroup(browser, group) {
   console.log(`  [SearchGroup] total <a> tags: ${diag.totalAnchors}, tags matching /products/: ${diag.productAnchors}`);
   console.log(`  [SearchGroup] body text sample:`, JSON.stringify(diag.bodyTextSample));
 
-  // If no product links turned up, this might be a location-confirmation
-  // prompt ("You're shopping at [address] — Are you sure?") or a multi-location
-  // picker (e.g. "Almaden Rd Menu" / "Saratoga Ave Menu") blocking the real
-  // menu from rendering, rather than a parsing problem. Log every visible
-  // clickable element's text so we can see what's actually on the page, and
-  // try clicking anything that looks like a confirm/continue button — or, if
-  // the page title names a specific location, a menu link matching it.
+  // If STILL no product links (even after checking frames), this might be a
+  // location-confirmation prompt or a multi-location picker blocking the real
+  // menu. Log every visible clickable element's text, and try clicking
+  // anything that looks like a confirm/continue button — or, if the page
+  // title names a specific location, a menu link matching it.
   if (diag.productAnchors === 0) {
-    const clickableTexts = await page.evaluate(() => {
+    const clickableTexts = await target.evaluate(() => {
       const els = Array.from(document.querySelectorAll('button, [role="button"], a'));
       const texts = els.map(el => el.textContent.trim()).filter(t => t && t.length < 40);
       return [...new Set(texts)].slice(0, 40);
     });
     console.log(`  [SearchGroup] no product links found — visible clickable text on page:`, JSON.stringify(clickableTexts));
 
-    // Pull a location keyword out of the page title (e.g. "Haze Dispensary -
-    // Almaden Rd San Jose, CA" → "Almaden") to match against a "[Location]
-    // Menu" style link, in addition to generic confirm-word patterns.
     const titleLocationWord = (diag.title.match(/-\s*([A-Za-z]+)/) || [])[1];
 
     const confirmPatterns = [
@@ -363,10 +381,17 @@ async function scrapeSearchGroup(browser, group) {
     ];
     let clickedText = null;
     for (const pattern of confirmPatterns) {
-      const handle = await page.evaluateHandle(({ src, flags }) => {
+      const handle = await target.evaluateHandle(({ src, flags }) => {
         const re = new RegExp(src, flags);
         const els = Array.from(document.querySelectorAll('button, [role="button"], a'));
-        return els.find(el => re.test(el.textContent.trim())) || null;
+        // Only consider elements that are actually visible/clickable, not
+        // hidden nav-dropdown items that exist in the DOM but can't be clicked.
+        return els.find(el => {
+          if (!re.test(el.textContent.trim())) return false;
+          const r = el.getBoundingClientRect();
+          const style = getComputedStyle(el);
+          return r.width > 0 && r.height > 0 && style.visibility !== "hidden" && style.display !== "none";
+        }) || null;
       }, { src: pattern.source, flags: pattern.flags });
       const el = handle.asElement();
       if (el) {
@@ -379,7 +404,7 @@ async function scrapeSearchGroup(browser, group) {
     }
 
     if (clickedText) {
-      const diag2 = await page.evaluate(() => ({
+      const diag2 = await target.evaluate(() => ({
         totalAnchors: document.querySelectorAll("a").length,
         productAnchors: document.querySelectorAll('a[href*="/products/"]').length,
         bodyTextSample: document.body.innerText.slice(0, 500),
@@ -387,14 +412,14 @@ async function scrapeSearchGroup(browser, group) {
       console.log(`  [SearchGroup] after click — total <a>: ${diag2.totalAnchors}, matching /products/: ${diag2.productAnchors}`);
       console.log(`  [SearchGroup] after click — body text sample:`, JSON.stringify(diag2.bodyTextSample));
     } else {
-      console.log(`  [SearchGroup] no matching confirm/continue button found to click`);
+      console.log(`  [SearchGroup] no matching visible confirm/continue button found to click`);
     }
   }
 
   // The site itself states the true result count (e.g. "7 products") — use it
   // both to know when we've captured everything and to trim off the unrelated
   // "Flower For You" recommendations that get appended after the real results.
-  const declaredCount = await page.evaluate(() => {
+  const declaredCount = await target.evaluate(() => {
     const m = document.body.innerText.match(/(\d+)\s+products?\b/i);
     return m ? parseInt(m[1], 10) : null;
   });
@@ -402,7 +427,7 @@ async function scrapeSearchGroup(browser, group) {
 
   const collected = new Map();
   function mergeBatch(batch) { for (const item of batch) collected.set(item.id, item); }
-  mergeBatch(await page.evaluate(extractJaneCards));
+  mergeBatch(await target.evaluate(extractJaneCards));
 
   // Sponsored ads for other brands get mixed into the results even with a brand
   // filter active, so raw card count reaching the declared count doesn't mean
@@ -421,15 +446,15 @@ async function scrapeSearchGroup(browser, group) {
   // modest pass in case of any lazy loading.
   let pos = 0;
   const step = 700;
-  let maxScroll = await page.evaluate(() => document.scrollingElement.scrollHeight);
+  let maxScroll = await target.evaluate(() => document.scrollingElement.scrollHeight);
   let iterations = 0;
   const maxIterations = 40;
   while (pos <= maxScroll && iterations < maxIterations &&
          (declaredCount == null || matchedCount() < declaredCount)) {
-    await page.evaluate((y) => window.scrollTo(0, y), pos);
+    await target.evaluate((y) => window.scrollTo(0, y), pos);
     await sleep(500);
-    mergeBatch(await page.evaluate(extractJaneCards));
-    maxScroll = Math.max(maxScroll, await page.evaluate(() => document.scrollingElement.scrollHeight));
+    mergeBatch(await target.evaluate(extractJaneCards));
+    maxScroll = Math.max(maxScroll, await target.evaluate(() => document.scrollingElement.scrollHeight));
     pos += step;
     iterations++;
   }
@@ -472,12 +497,13 @@ async function scrapeSearchGroup(browser, group) {
 
   await context.close();
 
+  const source = group.store.toLowerCase().replace(/\s+/g, "") + "-sj";
   return products.map(p => {
     const brand  = p.nameParts[0] || group.brand;
     const strain = p.nameParts[1] ?? p.slug.replace(/-/g, " ");
     const weightG = parseWeightGrams(p.weight) ?? parseWeightGrams(group.weight);
     return {
-      source:          "cakehouse-sj",
+      source,
       jane_product_id: `jane-${p.id}-${p.weight ?? "default"}`,
       product_base_id: p.id,
       brand,
