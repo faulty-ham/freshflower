@@ -165,6 +165,31 @@ const SEARCH_GROUPS = [
     url:    "https://www.iheartjane.com/stores/26/haze-dispensary-almaden-rd/menu?filters%5Bavailable_weights%5D%5B%5D=eighth%20ounce&filters%5Bbrand%5D%5B%5D=Fig%20Farms",
     store:  "Haze", brand: "Fig Farms", weight: "3.5g", platform: "jane",
   },
+  {
+    title:  "Haze - Lumpy's Flowers - 3.5g",
+    url:    "https://www.iheartjane.com/stores/26/haze-dispensary-almaden-rd/menu?filters%5Bavailable_weights%5D%5B%5D=eighth%20ounce&filters%5Bbrand%5D%5B%5D=Lumpy%27s%20Flowers",
+    store:  "Haze", brand: "Lumpy's Flowers", weight: "3.5g", platform: "jane",
+  },
+  {
+    title:  "Haze - Moon Valley Cannabis - 3.5g",
+    url:    "https://www.iheartjane.com/stores/26/haze-dispensary-almaden-rd/menu?filters%5Bavailable_weights%5D%5B%5D=eighth%20ounce&filters%5Bbrand%5D%5B%5D=Moon%20Valley%20Cannabis",
+    store:  "Haze", brand: "Moon Valley Cannabis", weight: "3.5g", platform: "jane",
+  },
+  {
+    title:  "Haze - Team Elite Genetics - 3.5g",
+    url:    "https://www.iheartjane.com/stores/26/haze-dispensary-almaden-rd/menu?filters%5Bavailable_weights%5D%5B%5D=eighth%20ounce&filters%5Bbrand%5D%5B%5D=Team%20Elite%20Genetics",
+    store:  "Haze", brand: "Team Elite Genetics", weight: "3.5g", platform: "jane",
+  },
+  {
+    title:  "Haze - UpNorth Humboldt - 3.5g",
+    url:    "https://www.iheartjane.com/stores/26/haze-dispensary-almaden-rd/menu?filters%5Bavailable_weights%5D%5B%5D=eighth%20ounce&filters%5Bbrand%5D%5B%5D=UpNorth%20Humboldt",
+    store:  "Haze", brand: "UpNorth Humboldt", weight: "3.5g", platform: "jane",
+  },
+  {
+    title:  "Haze - Wood Wide - 3.5g",
+    url:    "https://www.iheartjane.com/stores/26/haze-dispensary-almaden-rd/menu?filters%5Bavailable_weights%5D%5B%5D=eighth%20ounce&filters%5Bbrand%5D%5B%5D=Wood%20Wide",
+    store:  "Haze", brand: "Wood Wide", weight: "3.5g", platform: "jane",
+  },
 ];
 
 function parseWeightGrams(option = "") {
