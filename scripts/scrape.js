@@ -336,10 +336,12 @@ async function scrapeSearchGroup(browser, group) {
   console.log(`  [SearchGroup] body text sample:`, JSON.stringify(diag.bodyTextSample));
 
   // If no product links turned up, this might be a location-confirmation
-  // prompt ("You're shopping at [address] — Are you sure?") blocking the real
+  // prompt ("You're shopping at [address] — Are you sure?") or a multi-location
+  // picker (e.g. "Almaden Rd Menu" / "Saratoga Ave Menu") blocking the real
   // menu from rendering, rather than a parsing problem. Log every visible
   // clickable element's text so we can see what's actually on the page, and
-  // try clicking anything that looks like a confirm/continue button.
+  // try clicking anything that looks like a confirm/continue button — or, if
+  // the page title names a specific location, a menu link matching it.
   if (diag.productAnchors === 0) {
     const clickableTexts = await page.evaluate(() => {
       const els = Array.from(document.querySelectorAll('button, [role="button"], a'));
@@ -348,17 +350,24 @@ async function scrapeSearchGroup(browser, group) {
     });
     console.log(`  [SearchGroup] no product links found — visible clickable text on page:`, JSON.stringify(clickableTexts));
 
+    // Pull a location keyword out of the page title (e.g. "Haze Dispensary -
+    // Almaden Rd San Jose, CA" → "Almaden") to match against a "[Location]
+    // Menu" style link, in addition to generic confirm-word patterns.
+    const titleLocationWord = (diag.title.match(/-\s*([A-Za-z]+)/) || [])[1];
+
     const confirmPatterns = [
       /^yes$/i, /confirm/i, /shop here/i, /^continue$/i,
       /i'?m shopping here/i, /this is my store/i, /^ok$/i, /^got it$/i, /^accept$/i,
+      ...(titleLocationWord ? [new RegExp(`${titleLocationWord}.*menu`, "i")] : []),
+      /\bmenu\b/i,
     ];
     let clickedText = null;
     for (const pattern of confirmPatterns) {
-      const handle = await page.evaluateHandle((src, flags) => {
+      const handle = await page.evaluateHandle(({ src, flags }) => {
         const re = new RegExp(src, flags);
         const els = Array.from(document.querySelectorAll('button, [role="button"], a'));
         return els.find(el => re.test(el.textContent.trim())) || null;
-      }, pattern.source, pattern.flags);
+      }, { src: pattern.source, flags: pattern.flags });
       const el = handle.asElement();
       if (el) {
         clickedText = await el.evaluate(e => e.textContent.trim());
