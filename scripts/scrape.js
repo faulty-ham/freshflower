@@ -335,6 +335,53 @@ async function scrapeSearchGroup(browser, group) {
   console.log(`  [SearchGroup] total <a> tags: ${diag.totalAnchors}, tags matching /products/: ${diag.productAnchors}`);
   console.log(`  [SearchGroup] body text sample:`, JSON.stringify(diag.bodyTextSample));
 
+  // If no product links turned up, this might be a location-confirmation
+  // prompt ("You're shopping at [address] — Are you sure?") blocking the real
+  // menu from rendering, rather than a parsing problem. Log every visible
+  // clickable element's text so we can see what's actually on the page, and
+  // try clicking anything that looks like a confirm/continue button.
+  if (diag.productAnchors === 0) {
+    const clickableTexts = await page.evaluate(() => {
+      const els = Array.from(document.querySelectorAll('button, [role="button"], a'));
+      const texts = els.map(el => el.textContent.trim()).filter(t => t && t.length < 40);
+      return [...new Set(texts)].slice(0, 40);
+    });
+    console.log(`  [SearchGroup] no product links found — visible clickable text on page:`, JSON.stringify(clickableTexts));
+
+    const confirmPatterns = [
+      /^yes$/i, /confirm/i, /shop here/i, /^continue$/i,
+      /i'?m shopping here/i, /this is my store/i, /^ok$/i, /^got it$/i, /^accept$/i,
+    ];
+    let clickedText = null;
+    for (const pattern of confirmPatterns) {
+      const handle = await page.evaluateHandle((src, flags) => {
+        const re = new RegExp(src, flags);
+        const els = Array.from(document.querySelectorAll('button, [role="button"], a'));
+        return els.find(el => re.test(el.textContent.trim())) || null;
+      }, pattern.source, pattern.flags);
+      const el = handle.asElement();
+      if (el) {
+        clickedText = await el.evaluate(e => e.textContent.trim());
+        console.log(`  [SearchGroup] clicking element matching /${pattern.source}/${pattern.flags}: ${JSON.stringify(clickedText)}`);
+        await el.click().catch(e => console.log(`  [SearchGroup] click failed: ${e.message}`));
+        await sleep(2500);
+        break;
+      }
+    }
+
+    if (clickedText) {
+      const diag2 = await page.evaluate(() => ({
+        totalAnchors: document.querySelectorAll("a").length,
+        productAnchors: document.querySelectorAll('a[href*="/products/"]').length,
+        bodyTextSample: document.body.innerText.slice(0, 500),
+      }));
+      console.log(`  [SearchGroup] after click — total <a>: ${diag2.totalAnchors}, matching /products/: ${diag2.productAnchors}`);
+      console.log(`  [SearchGroup] after click — body text sample:`, JSON.stringify(diag2.bodyTextSample));
+    } else {
+      console.log(`  [SearchGroup] no matching confirm/continue button found to click`);
+    }
+  }
+
   // The site itself states the true result count (e.g. "7 products") — use it
   // both to know when we've captured everything and to trim off the unrelated
   // "Flower For You" recommendations that get appended after the real results.
