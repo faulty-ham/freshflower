@@ -35,14 +35,30 @@ header {
 }
 .stat-pill strong { color: var(--text); }
 
-/* -- Filters -- */
-.filters { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 14px; }
-.filters select {
+/* -- Filters (multi-select dropdowns) -- */
+.filters { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 14px; position: relative; }
+.ms { position: relative; }
+.ms-btn {
   background: var(--bg3); border: 1px solid var(--border2); color: var(--text);
   font-family: 'DM Sans', sans-serif; font-size: 13px; padding: 8px 12px; border-radius: 8px;
-  outline: none; cursor: pointer; min-width: 130px;
+  outline: none; cursor: pointer; min-width: 130px; text-align: left;
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
 }
-.filters select:hover { border-color: var(--amber); }
+.ms-btn:hover { border-color: var(--amber); }
+.ms-btn .arrow { color: var(--dim); font-size: 10px; }
+.ms-panel {
+  display: none; position: absolute; top: calc(100% + 6px); left: 0; z-index: 20;
+  background: var(--bg3); border: 1px solid var(--border2); border-radius: 8px;
+  min-width: 200px; max-height: 280px; overflow-y: auto; padding: 6px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+}
+.ms.open .ms-panel { display: block; }
+.ms-option {
+  display: flex; align-items: center; gap: 8px; padding: 7px 8px; border-radius: 6px;
+  cursor: pointer; font-size: 13px; color: var(--text);
+}
+.ms-option:hover { background: var(--bg2); }
+.ms-option input { accent-color: var(--amber); cursor: pointer; }
 .clear-filters {
   background: transparent; border: 1px solid var(--border); color: var(--muted);
   font-size: 12px; padding: 8px 12px; border-radius: 8px; cursor: pointer; font-family: 'DM Mono', monospace;
@@ -110,9 +126,9 @@ main { max-width: 900px; margin: 0 auto; padding: 20px; }
     <div class="stat-pill"><strong id="stat-count">-</strong> variants &middot; <strong id="stat-groups">-</strong> search groups</div>
   </div>
   <div class="filters">
-    <select id="filter-store"><option value="">All stores</option></select>
-    <select id="filter-brand"><option value="">All brands</option></select>
-    <select id="filter-weight"><option value="">All weights</option></select>
+    <div class="ms" id="ms-store"></div>
+    <div class="ms" id="ms-brand"></div>
+    <div class="ms" id="ms-weight"></div>
     <button class="clear-filters" id="clear-filters-btn">Clear filters</button>
   </div>
 </header>
@@ -126,6 +142,29 @@ main { max-width: 900px; margin: 0 auto; padding: 20px; }
 const SUPABASE_URL  = "https://oapjuqurbfimxopjpqgj.supabase.co";
 const SUPABASE_ANON = "sb_publishable_B6dXNLCuGE3n3z5qazgdLg_ZE-S4ZLr";
 // (age color tiers are defined inline in render(): <=30d green, <=60d blue, <=90d amber, older red)
+
+// Some brands appear under slightly different names depending on which
+// store's site they're scraped from. Map each raw name to one canonical
+// display name so the brand filter treats them as a single option — e.g.
+// selecting "UpNorth" also matches products tagged "UpNorth Humboldt".
+// Add more pairs here as new naming variants turn up.
+const BRAND_ALIASES = {
+  "moon valley cannabis":  "Moon Valley",
+  "moon valley organics":  "Moon Valley",
+  "seed junky":            "Seed Junky",
+  "seed junky genetics":   "Seed Junky",
+  "snowtill":              "Snowtill",
+  "snowtill organics":     "Snowtill",
+  "upnorth":               "UpNorth",
+  "upnorth humboldt":      "UpNorth",
+  "team elite genetics":   "Team Elite Genetics",
+  "cam":                   "Cam",
+  "cam private reserve":   "Cam",
+};
+function canonicalBrand(raw) {
+  const key = (raw ?? "").toLowerCase().trim();
+  return BRAND_ALIASES[key] || (raw ?? "").trim();
+}
 // --------------------------------------------------------------------------------
 
 const API = (path) => fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
@@ -137,7 +176,7 @@ const API = (path) => fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
 });
 
 let allProducts = [];
-let filters = { store: "", brand: "", weight: "" };
+let filters = { stores: new Set(), brands: new Set(), weights: new Set() };
 
 async function fetchProducts() {
   // current_inventory view already joins in search_group title/store/brand/weight
@@ -162,36 +201,71 @@ function daysAgo(iso) {
   return (Date.now() - new Date(iso).getTime()) / 86400000;
 }
 
+function buildMultiSelect(containerId, allLabel, options, selectedSet) {
+  const container = document.getElementById(containerId);
+  const summary = selectedSet.size === 0
+    ? allLabel
+    : selectedSet.size === 1
+      ? [...selectedSet][0]
+      : `${selectedSet.size} selected`;
+
+  container.innerHTML = `
+    <button class="ms-btn" type="button">
+      <span>${escapeHtml(summary)}</span>
+      <span class="arrow">&#9662;</span>
+    </button>
+    <div class="ms-panel">
+      ${options.map(opt => `
+        <label class="ms-option">
+          <input type="checkbox" value="${escapeHtml(opt)}" ${selectedSet.has(opt) ? "checked" : ""}>
+          ${escapeHtml(opt)}
+        </label>
+      `).join("")}
+    </div>
+  `;
+
+  const btn = container.querySelector(".ms-btn");
+  btn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const wasOpen = container.classList.contains("open");
+    document.querySelectorAll(".ms.open").forEach(el => el.classList.remove("open"));
+    if (!wasOpen) container.classList.add("open");
+  });
+  container.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+    cb.addEventListener("change", () => {
+      if (cb.checked) selectedSet.add(cb.value);
+      else selectedSet.delete(cb.value);
+      render();
+      // Re-render just this widget's button label without closing the panel
+      const newSummary = selectedSet.size === 0 ? allLabel
+        : selectedSet.size === 1 ? [...selectedSet][0]
+        : `${selectedSet.size} selected`;
+      container.querySelector(".ms-btn span").textContent = newSummary;
+    });
+  });
+}
+document.addEventListener("click", () => {
+  document.querySelectorAll(".ms.open").forEach(el => el.classList.remove("open"));
+});
+
 function populateFilterOptions() {
   const stores  = [...new Set(allProducts.map(p => p.search_group_store).filter(Boolean))].sort();
-  const brands  = [...new Set(allProducts.map(p => p.search_group_brand).filter(Boolean))].sort();
+  const brands  = [...new Set(allProducts.map(p => canonicalBrand(p.search_group_brand)).filter(Boolean))].sort();
   const weights = [...new Set(allProducts.map(p => p.search_group_weight).filter(Boolean))]
     .sort((a, b) => parseFloat(a) - parseFloat(b));
 
-  const fill = (id, values, current) => {
-    const sel = document.getElementById(id);
-    const placeholder = sel.options[0];
-    sel.innerHTML = "";
-    sel.appendChild(placeholder);
-    values.forEach(v => {
-      const opt = document.createElement("option");
-      opt.value = v; opt.textContent = v;
-      if (v === current) opt.selected = true;
-      sel.appendChild(opt);
-    });
-  };
-  fill("filter-store", stores, filters.store);
-  fill("filter-brand", brands, filters.brand);
-  fill("filter-weight", weights, filters.weight);
+  buildMultiSelect("ms-store", "All stores", stores, filters.stores);
+  buildMultiSelect("ms-brand", "All brands", brands, filters.brands);
+  buildMultiSelect("ms-weight", "All weights", weights, filters.weights);
 }
 
 function render() {
   const main = document.getElementById("main");
 
   const filtered = allProducts.filter(p =>
-    (!filters.store  || p.search_group_store  === filters.store) &&
-    (!filters.brand  || p.search_group_brand  === filters.brand) &&
-    (!filters.weight || p.search_group_weight === filters.weight)
+    (filters.stores.size  === 0 || filters.stores.has(p.search_group_store)) &&
+    (filters.brands.size  === 0 || filters.brands.has(canonicalBrand(p.search_group_brand))) &&
+    (filters.weights.size === 0 || filters.weights.has(p.search_group_weight))
   );
 
   document.getElementById("stat-count").textContent = filtered.length;
@@ -263,14 +337,9 @@ async function init() {
   }
 }
 
-document.getElementById("filter-store").addEventListener("change", e => { filters.store = e.target.value; render(); });
-document.getElementById("filter-brand").addEventListener("change", e => { filters.brand = e.target.value; render(); });
-document.getElementById("filter-weight").addEventListener("change", e => { filters.weight = e.target.value; render(); });
 document.getElementById("clear-filters-btn").addEventListener("click", () => {
-  filters = { store: "", brand: "", weight: "" };
-  document.getElementById("filter-store").value = "";
-  document.getElementById("filter-brand").value = "";
-  document.getElementById("filter-weight").value = "";
+  filters = { stores: new Set(), brands: new Set(), weights: new Set() };
+  populateFilterOptions();
   render();
 });
 
