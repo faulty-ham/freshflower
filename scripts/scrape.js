@@ -342,7 +342,7 @@ function extractJaneCards() {
       /^(select weight|add to bag)$/i,
     ];
     const contentLines = lines.filter(l => !noiseRe.some(re => re.test(l)));
-    const strainVal = contentLines[0] ?? "";
+    const strainVal = (contentLines[0] ?? "").replace(/\s*\[\s*[\d.]+\s*(g|oz|mg)\s*\]\s*$/i, "").trim();
     const brandVal  = contentLines[1] ?? "";
     const nameParts = [brandVal, strainVal];
     // nameParts[0] = brand, nameParts[1] = strain
@@ -728,6 +728,7 @@ function extractMeadowCards() {
     }
 
     s = s.replace(/\s+/g, " ").trim();
+    s = s.replace(/\s*\[\s*[\d.]+\s*(g|oz|mg)\s*\]\s*$/i, "").trim();
     return s || original;
   }
 
@@ -994,7 +995,8 @@ function extractDutchieCards() {
 
     const titleLine = lines[0] || "";
     const dashIdx = titleLine.lastIndexOf(" - ");
-    const strain = dashIdx >= 0 ? titleLine.slice(dashIdx + 3).trim() : titleLine.trim();
+    const strain = (dashIdx >= 0 ? titleLine.slice(dashIdx + 3).trim() : titleLine.trim())
+      .replace(/\s*\[\s*[\d.]+\s*(g|oz|mg)\s*\]\s*$/i, "").trim();
 
     const brand = lines[1] || "";
     const lineage = lines.find(l => /^(indica|sativa|hybrid|cbd|cbn)$/i.test(l)) || "";
@@ -1167,6 +1169,11 @@ async function scrapeDutchieGroup(browser, group) {
 
   return products.map(p => {
     const weightG = parseWeightGrams(p.weight) ?? parseWeightGrams(group.weight);
+    // Harborside displays weight in ounces ("1/8 oz") — normalize to grams
+    // for consistency with every other store, which already shows grams.
+    const weightLabel = weightG != null
+      ? `${Number(weightG.toFixed(2))}g`
+      : (p.weight || group.weight);
     return {
       source: "harborside-sj",
       jane_product_id: `dutchie-${p.id}`,
@@ -1175,7 +1182,7 @@ async function scrapeDutchieGroup(browser, group) {
       strain: p.strain,
       lineage: p.lineage,
       weight_grams: weightG,
-      weight_label: p.weight || group.weight,
+      weight_label: weightLabel,
       price: p.price,
       thc_pct: p.thc,
       cbd_pct: null,
