@@ -551,6 +551,28 @@ async function scrapeSearchGroup(browser, group) {
     console.log(`  [SearchGroup] removed ${beforeDedupe - products.length} duplicate listing(s) of the same product`);
   }
 
+  // The card sometimes displays a different weight/price tier than what the
+  // URL actually filtered for (e.g. a product available at both 3.5g and 14g
+  // shows its 3.5g pricing by default even under a "?...=half ounce" URL).
+  // Since price is weight-specific, silently keeping a mismatched item would
+  // show the wrong price under the wrong group — exclude it instead. Only
+  // applies to fixed-weight groups; splitByWeight groups bucket by whatever
+  // weight is actually found, so there's no "wrong" weight to check against.
+  if (!group.splitByWeight && group.weight) {
+    const targetWeightG = parseWeightGrams(group.weight);
+    const beforeWeightCheck = products.length;
+    const mismatched = [];
+    products = products.filter(p => {
+      const g = parseWeightGrams(p.weight);
+      const ok = targetWeightG == null || g == null || Math.abs(g - targetWeightG) < 0.01;
+      if (!ok) mismatched.push(`${p.nameParts[1]} (${p.weight})`);
+      return ok;
+    });
+    if (beforeWeightCheck !== products.length) {
+      console.log(`  [SearchGroup] excluded ${beforeWeightCheck - products.length} product(s) whose card showed a different weight than "${group.weight}": ${JSON.stringify(mismatched)}`);
+    }
+  }
+
   console.log(`  [SearchGroup] ${products.length} confirmed "${group.brand}" products after filtering + de-duping`);
   if (declaredCount != null && products.length !== declaredCount) {
     console.log(`  [SearchGroup] NOTE: brand-matched count (${products.length}) differs from page's declared count (${declaredCount}) — declared count may include sponsored items from other brands, or more scrolling may be needed`);
@@ -1083,6 +1105,25 @@ async function scrapeDutchieGroup(browser, group) {
   if (rejectedBrands.length > 0) {
     console.log(`  [Dutchie] excluded ${allExtracted.length - products.length} card(s) with non-matching brand: ${JSON.stringify(rejectedBrands)}`);
   }
+
+  // Same weight-mismatch issue as the Jane scraper — the card can show a
+  // different weight/price tier than the URL actually filtered for. Since
+  // price is weight-specific, exclude rather than trust it blindly.
+  if (!group.splitByWeight && group.weight) {
+    const targetWeightG = parseWeightGrams(group.weight);
+    const beforeWeightCheck = products.length;
+    const mismatched = [];
+    products = products.filter(p => {
+      const g = parseWeightGrams(p.weight);
+      const ok = targetWeightG == null || g == null || Math.abs(g - targetWeightG) < 0.01;
+      if (!ok) mismatched.push(`${p.strain} (${p.weight})`);
+      return ok;
+    });
+    if (beforeWeightCheck !== products.length) {
+      console.log(`  [Dutchie] excluded ${beforeWeightCheck - products.length} product(s) whose card showed a different weight than "${group.weight}": ${JSON.stringify(mismatched)}`);
+    }
+  }
+
   console.log(`  [Dutchie] ${products.length} confirmed "${group.brand}" products (network products captured: ${rawFromNetwork.length})`);
 
   if (products.length > 0) {
