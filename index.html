@@ -129,6 +129,7 @@ main { max-width: 900px; margin: 0 auto; padding: 20px; }
     <div class="ms" id="ms-store"></div>
     <div class="ms" id="ms-brand"></div>
     <div class="ms" id="ms-weight"></div>
+    <div class="ms" id="ms-new"></div>
     <button class="clear-filters" id="clear-filters-btn">Clear filters</button>
   </div>
 </header>
@@ -176,7 +177,7 @@ const API = (path) => fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
 });
 
 let allProducts = [];
-let filters = { stores: new Set(), brands: new Set(), weights: new Set() };
+let filters = { stores: new Set(), brands: new Set(), weights: new Set(), newness: "" };
 
 async function fetchProducts() {
   // current_inventory view already joins in search_group title/store/brand/weight
@@ -231,6 +232,7 @@ function buildMultiSelect(containerId, allLabel, options, selectedSet) {
     document.querySelectorAll(".ms.open").forEach(el => el.classList.remove("open"));
     if (!wasOpen) container.classList.add("open");
   });
+  container.querySelector(".ms-panel").addEventListener("click", (e) => e.stopPropagation());
   container.querySelectorAll('input[type="checkbox"]').forEach(cb => {
     cb.addEventListener("change", () => {
       if (cb.checked) selectedSet.add(cb.value);
@@ -248,6 +250,48 @@ document.addEventListener("click", () => {
   document.querySelectorAll(".ms.open").forEach(el => el.classList.remove("open"));
 });
 
+function buildSingleSelect(containerId, allLabel, options, selectedValue, onSelect) {
+  // options: [{ value, label }]. Single choice (radio), not checkboxes —
+  // closes on selection since there's nothing to "add more" of.
+  const container = document.getElementById(containerId);
+  const current = options.find(o => o.value === selectedValue);
+  const summary = current ? current.label : allLabel;
+
+  container.innerHTML = `
+    <button class="ms-btn" type="button">
+      <span>${escapeHtml(summary)}</span>
+      <span class="arrow">&#9662;</span>
+    </button>
+    <div class="ms-panel">
+      <label class="ms-option">
+        <input type="radio" name="${containerId}-radio" value="" ${selectedValue === "" ? "checked" : ""}>
+        ${escapeHtml(allLabel)}
+      </label>
+      ${options.map(opt => `
+        <label class="ms-option">
+          <input type="radio" name="${containerId}-radio" value="${escapeHtml(opt.value)}" ${selectedValue === opt.value ? "checked" : ""}>
+          ${escapeHtml(opt.label)}
+        </label>
+      `).join("")}
+    </div>
+  `;
+
+  const btn = container.querySelector(".ms-btn");
+  btn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const wasOpen = container.classList.contains("open");
+    document.querySelectorAll(".ms.open").forEach(el => el.classList.remove("open"));
+    if (!wasOpen) container.classList.add("open");
+  });
+  container.querySelector(".ms-panel").addEventListener("click", (e) => e.stopPropagation());
+  container.querySelectorAll('input[type="radio"]').forEach(rb => {
+    rb.addEventListener("change", () => {
+      onSelect(rb.value);
+      container.classList.remove("open");
+    });
+  });
+}
+
 function populateFilterOptions() {
   const stores  = [...new Set(allProducts.map(p => p.search_group_store).filter(Boolean))].sort();
   const brands  = [...new Set(allProducts.map(p => canonicalBrand(p.search_group_brand)).filter(Boolean))].sort();
@@ -257,15 +301,31 @@ function populateFilterOptions() {
   buildMultiSelect("ms-store", "All stores", stores, filters.stores);
   buildMultiSelect("ms-brand", "All brands", brands, filters.brands);
   buildMultiSelect("ms-weight", "All weights", weights, filters.weights);
+  buildSingleSelect("ms-new", "New", [
+    { value: "today", label: "As of Today" },
+    { value: "week",  label: "As of This Week" },
+    { value: "month", label: "As of This Month" },
+  ], filters.newness, (value) => { filters.newness = value; render(); });
 }
 
 function render() {
   const main = document.getElementById("main");
 
+  const newnessOk = (p) => {
+    if (!filters.newness) return true;
+    if (!p.first_seen_at) return false;
+    const age = daysAgo(p.first_seen_at);
+    if (filters.newness === "today") return age < 1;
+    if (filters.newness === "week")  return age <= 7;
+    if (filters.newness === "month") return age <= 30;
+    return true;
+  };
+
   const filtered = allProducts.filter(p =>
     (filters.stores.size  === 0 || filters.stores.has(p.search_group_store)) &&
     (filters.brands.size  === 0 || filters.brands.has(canonicalBrand(p.search_group_brand))) &&
-    (filters.weights.size === 0 || filters.weights.has(p.search_group_weight))
+    (filters.weights.size === 0 || filters.weights.has(p.search_group_weight)) &&
+    newnessOk(p)
   );
 
   document.getElementById("stat-count").textContent = filtered.length;
@@ -338,7 +398,7 @@ async function init() {
 }
 
 document.getElementById("clear-filters-btn").addEventListener("click", () => {
-  filters = { stores: new Set(), brands: new Set(), weights: new Set() };
+  filters = { stores: new Set(), brands: new Set(), weights: new Set(), newness: "" };
   populateFilterOptions();
   render();
 });
