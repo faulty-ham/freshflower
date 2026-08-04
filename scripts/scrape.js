@@ -952,6 +952,37 @@ async function scrapeDutchieGroup(browser, group) {
   console.log(`  [Dutchie] body text sample:`, JSON.stringify(diag.bodyTextSample));
   console.log(`  [Dutchie] network products captured: ${rawFromNetwork.length}`);
 
+  // Dump the actual text content of real product cards (using the same
+  // DOM text-node-grouping technique that worked for Jane/Meadow) so we can
+  // design real extraction logic next round instead of guessing at layout.
+  if (rawFromNetwork.length === 0) {
+    const cardSamples = await target.evaluate(() => {
+      function getTextLines(el) {
+        const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, null);
+        const groups = [];
+        let node, lastParent = null, current = "";
+        while ((node = walker.nextNode())) {
+          const t = node.textContent.trim();
+          if (!t) continue;
+          const parent = node.parentElement;
+          if (parent === lastParent) {
+            current += " " + t;
+          } else {
+            if (current) groups.push(current.trim());
+            current = t;
+            lastParent = parent;
+          }
+        }
+        if (current) groups.push(current.trim());
+        return groups;
+      }
+      const links = Array.from(document.querySelectorAll('a[href*="/product/"]')).slice(0, 4);
+      return links.map(a => ({ href: a.getAttribute("href"), lines: getTextLines(a) }));
+    });
+    console.log(`  [Dutchie] --- debug: product card text for first ${cardSamples.length} cards ---`);
+    cardSamples.forEach((c, i) => console.log(`  [Dutchie] #${i} href=${c.href} lines:`, JSON.stringify(c.lines)));
+  }
+
   await context.close();
 
   // Prefer network-captured GraphQL data when available — more reliable and
