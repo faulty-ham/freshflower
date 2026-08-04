@@ -977,10 +977,35 @@ async function scrapeDutchieGroup(browser, group) {
         return groups;
       }
       const links = Array.from(document.querySelectorAll('a[href*="/product/"]')).slice(0, 4);
-      return links.map(a => ({ href: a.getAttribute("href"), lines: getTextLines(a) }));
+      return links.map(a => {
+        // Price wasn't found inside the <a> itself — climb parent containers
+        // looking for it, stopping if we'd start pulling in a neighboring
+        // card (more than one product link inside the container).
+        let container = a;
+        let goodContainer = a;
+        let levelsClimbed = 0;
+        for (let i = 0; i < 4; i++) {
+          if (!container.parentElement) break;
+          container = container.parentElement;
+          const linksInside = container.querySelectorAll('a[href*="/product/"]').length;
+          if (linksInside > 1) break; // would start pulling in a neighboring card — stop
+          goodContainer = container;
+          levelsClimbed = i + 1;
+        }
+        return {
+          href: a.getAttribute("href"),
+          anchorLines: getTextLines(a),
+          parentLines: getTextLines(goodContainer),
+          levelsClimbed,
+        };
+      });
     });
     console.log(`  [Dutchie] --- debug: product card text for first ${cardSamples.length} cards ---`);
-    cardSamples.forEach((c, i) => console.log(`  [Dutchie] #${i} href=${c.href} lines:`, JSON.stringify(c.lines)));
+    cardSamples.forEach((c, i) => {
+      console.log(`  [Dutchie] #${i} href=${c.href}`);
+      console.log(`  [Dutchie] #${i} anchor lines:`, JSON.stringify(c.anchorLines));
+      console.log(`  [Dutchie] #${i} parent lines (climbed ${c.levelsClimbed}):`, JSON.stringify(c.parentLines));
+    });
   }
 
   await context.close();
