@@ -880,6 +880,90 @@ async function scrapeMeadowGroup(browser, group) {
 
 // ── ② Harborside
 
+// ── ③ Harborside (Dutchie platform) ─────────────────────────────────────────
+// Card structure, confirmed from real page text: the <a href="/product/..">
+// only contains the title/brand/lineage/THC — price and weight live in the
+// parent container one level up (climbing further would start pulling in a
+// neighboring card, so this stops as soon as more than one product link
+// appears in the container).
+//   "{Brand} {Weight} Jar - {Strain}"   <- title, inside the <a>
+//   "{Brand}"                            <- repeated
+//   "Indica" | "Sativa" | "Hybrid"
+//   "THC: XX.X%"
+//   ...promo/deal badge text (ignored)...
+//   "$XX.XX"                             <- price, only visible one level up
+//   "- 1/8 oz"                           <- weight, only visible one level up
+//   "Add to cart"
+function extractDutchieCards() {
+  function getTextLines(el) {
+    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, null);
+    const groups = [];
+    let node, lastParent = null, current = "";
+    while ((node = walker.nextNode())) {
+      const t = node.textContent.trim();
+      if (!t) continue;
+      const parent = node.parentElement;
+      if (parent === lastParent) {
+        current += " " + t;
+      } else {
+        if (current) groups.push(current.trim());
+        current = t;
+        lastParent = parent;
+      }
+    }
+    if (current) groups.push(current.trim());
+    return groups;
+  }
+
+  const links = Array.from(document.querySelectorAll('a[href*="/product/"]'));
+  const results = [];
+
+  for (const link of links) {
+    let container = link;
+    let goodContainer = link;
+    for (let i = 0; i < 4; i++) {
+      if (!container.parentElement) break;
+      container = container.parentElement;
+      const linksInside = container.querySelectorAll('a[href*="/product/"]').length;
+      if (linksInside > 1) break;
+      goodContainer = container;
+    }
+
+    const lines = getTextLines(goodContainer);
+    if (lines.length === 0) continue;
+
+    const titleLine = lines[0] || "";
+    const dashIdx = titleLine.lastIndexOf(" - ");
+    const strain = dashIdx >= 0 ? titleLine.slice(dashIdx + 3).trim() : titleLine.trim();
+
+    const brand = lines[1] || "";
+    const lineage = lines.find(l => /^(indica|sativa|hybrid|cbd|cbn)$/i.test(l)) || "";
+
+    const thcMatch = lines.join(" ").match(/THC:?\s*([\d.]+)%/i);
+    const thc = thcMatch ? parseFloat(thcMatch[1]) : null;
+
+    const priceLine = lines.find(l => /^\$[\d,.]+$/.test(l));
+    const price = priceLine ? parseFloat(priceLine.replace(/[$,]/g, "")) : null;
+
+    const weightLine = lines.find(l => /^-?\s*[\d./]+\s*(oz|g|gram)/i.test(l));
+    let weight = null;
+    if (weightLine) {
+      weight = weightLine.replace(/^-\s*/, "").trim();
+    } else {
+      const titleWeightMatch = titleLine.match(/(\d+(\.\d+)?\s*g)\b/i);
+      if (titleWeightMatch) weight = titleWeightMatch[1];
+    }
+
+    const href = link.getAttribute("href");
+    const idMatch = href ? href.match(/\/product\/([^/?#]+)/) : null;
+    const id = idMatch ? idMatch[1] : (href || strain);
+
+    results.push({ id, href, brand, strain, lineage, weight, price, thc, lines });
+  }
+
+  return results;
+}
+
 async function scrapeDutchieGroup(browser, group) {
   console.log(`\n[Dutchie] ${group.title}`);
   const context = await browser.newContext({
@@ -903,8 +987,6 @@ async function scrapeDutchieGroup(browser, group) {
         if (products?.length) {
           rawFromNetwork.push(...products);
           console.log(`  [Dutchie] network capture: +${products.length} (total ${rawFromNetwork.length})`);
-        } else if (json?.data) {
-          console.log("  [Dutchie] GQL response keys:", Object.keys(json.data).join(", "));
         }
       } catch (_) {}
     }
@@ -926,100 +1008,57 @@ async function scrapeDutchieGroup(browser, group) {
       if (count > targetAnchorCount) { targetAnchorCount = count; target = frame; }
     } catch (e) { /* cross-origin or not ready — skip */ }
   }
-  const usingIframe = target !== page.mainFrame();
-  if (allFrames.length > 1) {
-    console.log(`  [Dutchie] page has ${allFrames.length} frame(s): ${JSON.stringify(allFrames.map(f => f.url()))}`);
-    console.log(`  [Dutchie] using ${usingIframe ? `iframe (${target.url()})` : "main page"} — ${targetAnchorCount} anchor(s) found there`);
+
+  const norm = s => (s ?? "").toLowerCase().trim();
+  const targetBrand = norm(group.brand);
+  const brandMatches = b => {
+    const nb = norm(b);
+    return !!nb && (nb.includes(targetBrand) || targetBrand.includes(nb));
+  };
+
+  const collected = new Map();
+  function mergeBatch(batch) { for (const item of batch) collected.set(item.id, item); }
+  mergeBatch(await target.evaluate(extractDutchieCards));
+
+  // Modest scroll pass in case of lazy loading.
+  let pos = 0;
+  const step = 800;
+  let maxScroll = await target.evaluate(() => document.scrollingElement.scrollHeight);
+  let iterations = 0;
+  const maxIterations = 20;
+  while (pos <= maxScroll && iterations < maxIterations) {
+    await target.evaluate((y) => window.scrollTo(0, y), pos);
+    await sleep(500);
+    mergeBatch(await target.evaluate(extractDutchieCards));
+    maxScroll = Math.max(maxScroll, await target.evaluate(() => document.scrollingElement.scrollHeight));
+    pos += step;
+    iterations++;
   }
 
-  // Rich diagnostics — this platform is unverified, so log everything needed
-  // to design real DOM extraction next round if the network capture is empty.
-  const diag = await target.evaluate(() => {
-    const hrefs = Array.from(document.querySelectorAll('a[href]')).map(a => a.getAttribute('href'));
-    const hrefSample = [...new Set(hrefs)].slice(0, 30);
-    return {
-      title: document.title,
-      url: location.href,
-      totalAnchors: document.querySelectorAll('a').length,
-      bodyTextSample: document.body.innerText.slice(0, 800),
-      hrefSample,
-    };
-  });
-  console.log(`  [Dutchie] page title: ${JSON.stringify(diag.title)}`);
-  console.log(`  [Dutchie] final URL: ${diag.url}`);
-  console.log(`  [Dutchie] total <a> tags: ${diag.totalAnchors}`);
-  console.log(`  [Dutchie] href sample:`, JSON.stringify(diag.hrefSample));
-  console.log(`  [Dutchie] body text sample:`, JSON.stringify(diag.bodyTextSample));
-  console.log(`  [Dutchie] network products captured: ${rawFromNetwork.length}`);
+  const allExtracted = Array.from(collected.values());
+  console.log(`  [Dutchie] ${allExtracted.length} product cards found in DOM across ${iterations} scroll steps`);
 
-  // Dump the actual text content of real product cards (using the same
-  // DOM text-node-grouping technique that worked for Jane/Meadow) so we can
-  // design real extraction logic next round instead of guessing at layout.
-  if (rawFromNetwork.length === 0) {
-    const cardSamples = await target.evaluate(() => {
-      function getTextLines(el) {
-        const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, null);
-        const groups = [];
-        let node, lastParent = null, current = "";
-        while ((node = walker.nextNode())) {
-          const t = node.textContent.trim();
-          if (!t) continue;
-          const parent = node.parentElement;
-          if (parent === lastParent) {
-            current += " " + t;
-          } else {
-            if (current) groups.push(current.trim());
-            current = t;
-            lastParent = parent;
-          }
-        }
-        if (current) groups.push(current.trim());
-        return groups;
-      }
-      const links = Array.from(document.querySelectorAll('a[href*="/product/"]')).slice(0, 4);
-      return links.map(a => {
-        // Price wasn't found inside the <a> itself — climb parent containers
-        // looking for it, stopping if we'd start pulling in a neighboring
-        // card (more than one product link inside the container).
-        let container = a;
-        let goodContainer = a;
-        let levelsClimbed = 0;
-        for (let i = 0; i < 4; i++) {
-          if (!container.parentElement) break;
-          container = container.parentElement;
-          const linksInside = container.querySelectorAll('a[href*="/product/"]').length;
-          if (linksInside > 1) break; // would start pulling in a neighboring card — stop
-          goodContainer = container;
-          levelsClimbed = i + 1;
-        }
-        return {
-          href: a.getAttribute("href"),
-          anchorLines: getTextLines(a),
-          parentLines: getTextLines(goodContainer),
-          levelsClimbed,
-        };
-      });
-    });
-    console.log(`  [Dutchie] --- debug: product card text for first ${cardSamples.length} cards ---`);
-    cardSamples.forEach((c, i) => {
-      console.log(`  [Dutchie] #${i} href=${c.href}`);
-      console.log(`  [Dutchie] #${i} anchor lines:`, JSON.stringify(c.anchorLines));
-      console.log(`  [Dutchie] #${i} parent lines (climbed ${c.levelsClimbed}):`, JSON.stringify(c.parentLines));
+  let products = allExtracted.filter(p => brandMatches(p.brand));
+  const rejectedBrands = [...new Set(
+    allExtracted.filter(p => !brandMatches(p.brand)).map(p => p.brand || "(empty)")
+  )];
+  if (rejectedBrands.length > 0) {
+    console.log(`  [Dutchie] excluded ${allExtracted.length - products.length} card(s) with non-matching brand: ${JSON.stringify(rejectedBrands)}`);
+  }
+  console.log(`  [Dutchie] ${products.length} confirmed "${group.brand}" products (network products captured: ${rawFromNetwork.length})`);
+
+  if (products.length > 0) {
+    console.log("  [Dutchie] --- debug: first 3 products ---");
+    products.slice(0, 3).forEach((p, i) => {
+      console.log(`  [Dutchie] #${i} brand/strain/weight/price/thc:`, p.brand, "|", p.strain, "|", p.weight, "|", p.price, "|", p.thc);
     });
   }
 
   await context.close();
 
   // Prefer network-captured GraphQL data when available — more reliable and
-  // structured than anything we'd parse out of rendered DOM text.
+  // structured than anything parsed out of rendered DOM text.
   if (rawFromNetwork.length > 0) {
-    const norm = s => (s ?? "").toLowerCase().trim();
-    const targetBrand = norm(group.brand);
-    const brandMatches = b => {
-      const nb = norm(b);
-      return !!nb && (nb.includes(targetBrand) || targetBrand.includes(nb));
-    };
-
     const seen = new Set();
     const deduped = rawFromNetwork.filter(p => {
       const id = String(p.id ?? "");
@@ -1047,8 +1086,25 @@ async function scrapeDutchieGroup(browser, group) {
     );
   }
 
-  console.log(`  [Dutchie] no network GraphQL data captured — DOM extraction not yet implemented for this platform, returning 0 products this round`);
-  return [];
+  return products.map(p => {
+    const weightG = parseWeightGrams(p.weight) ?? parseWeightGrams(group.weight);
+    return {
+      source: "harborside-sj",
+      jane_product_id: `dutchie-${p.id}`,
+      product_base_id: p.id,
+      brand: p.brand || group.brand,
+      strain: p.strain,
+      lineage: p.lineage,
+      weight_grams: weightG,
+      weight_label: p.weight || group.weight,
+      price: p.price,
+      thc_pct: p.thc,
+      cbd_pct: null,
+      product_url: p.href ? `https://shopharborside.com${p.href}` : null,
+      image_url: null,
+      search_group_title: group.title,
+    };
+  });
 }
 
 // ── Database ───────────────────────────────────────────────────────────────────
