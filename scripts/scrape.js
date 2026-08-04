@@ -192,10 +192,48 @@ const SEARCH_GROUPS = [
   },
   {
     title:  "Harborside - Fig Farms - 3.5g",
-    // Harborside runs on Dutchie, not iHeartJane/Meadow — genuinely unverified
-    // platform, first attempt is diagnostic-heavy like Meadow/Haze were.
     url:    "https://shopharborside.com/stores/san-jose-10th-street/products/flower?brands=fig-farms&sortby=relevance&weight=1-8oz",
     store:  "Harborside", brand: "Fig Farms", weight: "3.5g", platform: "dutchie",
+  },
+  {
+    title:  "Harborside - 3C Farms - 3.5g",
+    url:    "https://shopharborside.com/stores/san-jose-10th-street/products/flower?brands=3-c-farms&sortby=relevance&weight=1-8oz",
+    store:  "Harborside", brand: "3C Farms", weight: "3.5g", platform: "dutchie",
+  },
+  {
+    title:  "Harborside - Cam - 3.5g",
+    url:    "https://shopharborside.com/stores/san-jose-10th-street/products/flower?brands=cam&sortby=relevance&weight=1-8oz",
+    store:  "Harborside", brand: "Cam", weight: "3.5g", platform: "dutchie",
+  },
+  {
+    title:  "Harborside - Cam - 14g",
+    url:    "https://shopharborside.com/stores/san-jose-10th-street/products/flower?brands=cam&sortby=relevance&weight=1-2oz",
+    store:  "Harborside", brand: "Cam", weight: "14g", platform: "dutchie",
+  },
+  {
+    title:  "Harborside - Green Dragon - 3.5g",
+    url:    "https://shopharborside.com/stores/san-jose-10th-street/products/flower?brands=green-dragon&sortby=relevance&weight=1-8oz",
+    store:  "Harborside", brand: "Green Dragon", weight: "3.5g", platform: "dutchie",
+  },
+  {
+    title:  "Harborside - Northern Harvest - 3.5g",
+    url:    "https://shopharborside.com/stores/san-jose-10th-street/products/flower?brands=northern-harvest&sortby=relevance&weight=1-8oz",
+    store:  "Harborside", brand: "Northern Harvest", weight: "3.5g", platform: "dutchie",
+  },
+  {
+    title:  "Harborside - Pure Beauty - 3.5g",
+    url:    "https://shopharborside.com/stores/san-jose-10th-street/products/flower?brands=pure-beauty&sortby=relevance&weight=1-8oz",
+    store:  "Harborside", brand: "Pure Beauty", weight: "3.5g", platform: "dutchie",
+  },
+  {
+    title:  "Harborside - Team Elite Genetics - 3.5g",
+    url:    "https://shopharborside.com/stores/san-jose-10th-street/products/flower?brands=team-elite-genetics&sortby=relevance&weight=1-8oz",
+    store:  "Harborside", brand: "Team Elite Genetics", weight: "3.5g", platform: "dutchie",
+  },
+  {
+    title:  "Harborside - UpNorth - 3.5g",
+    url:    "https://shopharborside.com/stores/san-jose-10th-street/products/flower?brands=up-north&sortby=relevance&weight=1-8oz",
+    store:  "Harborside", brand: "UpNorth", weight: "3.5g", platform: "dutchie",
   },
 ];
 
@@ -347,7 +385,7 @@ async function scrapeSearchGroup(browser, group) {
   const page = await context.newPage();
 
   await page.goto(group.url, { waitUntil: "domcontentloaded", timeout: 60000 });
-  await page.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => {});
+  await page.waitForLoadState("networkidle", { timeout: 8000 }).catch(() => {});
   await sleep(2500);
 
   // Some sites (e.g. custom storefronts wrapping a Jane menu, same pattern as
@@ -750,7 +788,7 @@ async function scrapeMeadowGroup(browser, group) {
   const page = await context.newPage();
 
   await page.goto(group.url, { waitUntil: "domcontentloaded", timeout: 60000 });
-  await page.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => {});
+  await page.waitForLoadState("networkidle", { timeout: 8000 }).catch(() => {});
   await sleep(4000);
 
   // The menu content may be an embedded iframe (the URL's "meadowQuery"/
@@ -993,7 +1031,7 @@ async function scrapeDutchieGroup(browser, group) {
   });
 
   await page.goto(group.url, { waitUntil: "domcontentloaded", timeout: 60000 });
-  await page.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => {});
+  await page.waitForLoadState("networkidle", { timeout: 8000 }).catch(() => {});
   await sleep(4000);
 
   // Check for an embedded iframe, same pattern as Meadow/Haze — Dutchie menus
