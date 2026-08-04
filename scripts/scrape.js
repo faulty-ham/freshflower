@@ -190,6 +190,13 @@ const SEARCH_GROUPS = [
     url:    "https://www.iheartjane.com/stores/26/haze-dispensary-almaden-rd/menu?filters%5Bavailable_weights%5D%5B%5D=eighth%20ounce&filters%5Bbrand%5D%5B%5D=Wood%20Wide",
     store:  "Haze", brand: "Wood Wide", weight: "3.5g", platform: "jane",
   },
+  {
+    title:  "Harborside - Fig Farms - 3.5g",
+    // Harborside runs on Dutchie, not iHeartJane/Meadow — genuinely unverified
+    // platform, first attempt is diagnostic-heavy like Meadow/Haze were.
+    url:    "https://shopharborside.com/stores/san-jose-10th-street/products/flower?brands=fig-farms&sortby=relevance&weight=1-8oz",
+    store:  "Harborside", brand: "Fig Farms", weight: "3.5g", platform: "dutchie",
+  },
 ];
 
 function parseWeightGrams(option = "") {
@@ -873,13 +880,16 @@ async function scrapeMeadowGroup(browser, group) {
 
 // ── ② Harborside
 
-async function scrapeDutchie(browser) {
-  console.log("\n[Dutchie] Scraping Harborside San Jose…");
+async function scrapeDutchieGroup(browser, group) {
+  console.log(`\n[Dutchie] ${group.title}`);
   const context = await browser.newContext({
     userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
   });
   const page = await context.newPage();
 
+  // Dutchie menus are commonly powered by a GraphQL API under the hood —
+  // capturing that response directly (if it fires) is far more reliable than
+  // scraping rendered DOM cards, so try this first alongside the DOM fallback.
   const rawFromNetwork = [];
   page.on("response", async (response) => {
     const url = response.url();
@@ -892,94 +902,96 @@ async function scrapeDutchie(browser) {
           json?.data?.products ?? null;
         if (products?.length) {
           rawFromNetwork.push(...products);
-          console.log(`  [Dutchie/net] +${products.length}`);
+          console.log(`  [Dutchie] network capture: +${products.length} (total ${rawFromNetwork.length})`);
         } else if (json?.data) {
-          console.log("  [Dutchie/net] GQL keys:", Object.keys(json.data).join(", "));
+          console.log("  [Dutchie] GQL response keys:", Object.keys(json.data).join(", "));
         }
       } catch (_) {}
     }
   });
 
-  await page.goto(
-    "https://shopharborside.com/stores/san-jose-10th-street/products/flower",
-    { waitUntil: "domcontentloaded", timeout: 60000 }
-  );
+  await page.goto(group.url, { waitUntil: "domcontentloaded", timeout: 60000 });
+  await page.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => {});
+  await sleep(4000);
 
-  await sleep(5000);
-
-  // Try to find product cards — Dutchie renders as article or div elements
-  const products = await page.evaluate(() => {
-    // Look for any element with product-like data attributes or class names
-    const allLinks = Array.from(document.querySelectorAll('a[href*="/products/"]'));
-    const productLinks = allLinks.filter(a =>
-      !a.href.includes('/products/flower') &&
-      !a.href.includes('/products/vape') &&
-      a.href.match(/\/products\/[^/]+$/)
-    );
-
-    return productLinks.map(a => {
-      const text   = a.textContent?.trim() ?? "";
-      const href   = a.href;
-      const idMatch = href.match(/\/([^/]+)$/);
-      return {
-        id:   idMatch?.[1] ?? href,
-        href,
-        text: text.slice(0, 300),
-      };
-    }).slice(0, 5); // just sample first 5 for debugging
-  });
-
-  const linkCount = await page.evaluate(() =>
-    document.querySelectorAll('a[href*="/products/"]').length
-  );
-
-  console.log(`  [Dutchie] Total product links: ${linkCount}`);
-  console.log(`  [Dutchie] Sample products: ${JSON.stringify(products)}`);
-  console.log(`  [Dutchie] Network captured: ${rawFromNetwork.length}`);
-
-  // Scroll and check again
-  for (let i = 0; i < 10; i++) {
-    await page.evaluate(() => window.scrollBy(0, 1200));
-    await sleep(1000);
+  // Check for an embedded iframe, same pattern as Meadow/Haze — Dutchie menus
+  // on a custom domain like shopharborside.com may or may not be native.
+  const allFrames = page.frames();
+  let target = page.mainFrame();
+  let targetAnchorCount = await page.evaluate(() => document.querySelectorAll("a").length).catch(() => 0);
+  for (const frame of allFrames) {
+    if (frame === page.mainFrame()) continue;
+    try {
+      const count = await frame.evaluate(() => document.querySelectorAll("a").length);
+      if (count > targetAnchorCount) { targetAnchorCount = count; target = frame; }
+    } catch (e) { /* cross-origin or not ready — skip */ }
   }
-  await sleep(2000);
+  const usingIframe = target !== page.mainFrame();
+  if (allFrames.length > 1) {
+    console.log(`  [Dutchie] page has ${allFrames.length} frame(s): ${JSON.stringify(allFrames.map(f => f.url()))}`);
+    console.log(`  [Dutchie] using ${usingIframe ? `iframe (${target.url()})` : "main page"} — ${targetAnchorCount} anchor(s) found there`);
+  }
 
-  const finalCount = await page.evaluate(() =>
-    document.querySelectorAll('a[href*="/products/"]').length
-  );
-  console.log(`  [Dutchie] After scroll: ${finalCount} product links`);
+  // Rich diagnostics — this platform is unverified, so log everything needed
+  // to design real DOM extraction next round if the network capture is empty.
+  const diag = await target.evaluate(() => {
+    const hrefs = Array.from(document.querySelectorAll('a[href]')).map(a => a.getAttribute('href'));
+    const hrefSample = [...new Set(hrefs)].slice(0, 30);
+    return {
+      title: document.title,
+      url: location.href,
+      totalAnchors: document.querySelectorAll('a').length,
+      bodyTextSample: document.body.innerText.slice(0, 800),
+      hrefSample,
+    };
+  });
+  console.log(`  [Dutchie] page title: ${JSON.stringify(diag.title)}`);
+  console.log(`  [Dutchie] final URL: ${diag.url}`);
+  console.log(`  [Dutchie] total <a> tags: ${diag.totalAnchors}`);
+  console.log(`  [Dutchie] href sample:`, JSON.stringify(diag.hrefSample));
+  console.log(`  [Dutchie] body text sample:`, JSON.stringify(diag.bodyTextSample));
+  console.log(`  [Dutchie] network products captured: ${rawFromNetwork.length}`);
 
   await context.close();
 
-  if (rawFromNetwork.length === 0 && finalCount === 0) {
-    console.log("[Dutchie] 0 products");
-    return [];
-  }
-
-  // Process network results if available
+  // Prefer network-captured GraphQL data when available — more reliable and
+  // structured than anything we'd parse out of rendered DOM text.
   if (rawFromNetwork.length > 0) {
+    const norm = s => (s ?? "").toLowerCase().trim();
+    const targetBrand = norm(group.brand);
+    const brandMatches = b => {
+      const nb = norm(b);
+      return !!nb && (nb.includes(targetBrand) || targetBrand.includes(nb));
+    };
+
     const seen = new Set();
-    return rawFromNetwork.filter(p => {
+    const deduped = rawFromNetwork.filter(p => {
       const id = String(p.id ?? "");
       if (!id || seen.has(id)) return false;
       seen.add(id); return true;
-    }).flatMap(p =>
+    });
+    const matched = deduped.filter(p => brandMatches(p.brand?.name));
+    console.log(`  [Dutchie] ${matched.length} of ${deduped.length} network products match brand "${group.brand}"`);
+
+    return matched.flatMap(p =>
       (p.variants ?? [{ id: p.id, priceRec: null, option: null }]).map(v => {
         const weightG = parseWeightGrams(String(v.option ?? ""));
         return {
           source: "harborside-sj",
           jane_product_id: `dutchie-${p.id}-${v.id ?? v.option ?? "default"}`,
           product_base_id: `dutchie-${p.id}`,
-          brand: p.brand?.name ?? "", strain: p.name ?? "", lineage: p.strainType ?? "",
-          weight_grams: weightG, weight_label: v.option ?? null, price: v.priceRec ?? null,
+          brand: p.brand?.name ?? group.brand, strain: p.name ?? "", lineage: p.strainType ?? "",
+          weight_grams: weightG, weight_label: v.option ?? group.weight, price: v.priceRec ?? null,
           thc_pct: null, cbd_pct: null,
           product_url: `https://shopharborside.com/stores/san-jose-10th-street/products/products/${p.id}`,
           image_url: p.image ?? null,
+          search_group_title: group.title,
         };
       })
     );
   }
 
+  console.log(`  [Dutchie] no network GraphQL data captured — DOM extraction not yet implemented for this platform, returning 0 products this round`);
   return [];
 }
 
@@ -1075,7 +1087,10 @@ async function main() {
   try {
     let all = [];
     for (const group of SEARCH_GROUPS) {
-      const scrapeFn = group.platform === "meadow" ? scrapeMeadowGroup : scrapeSearchGroup;
+      const scrapeFn =
+        group.platform === "meadow"  ? scrapeMeadowGroup :
+        group.platform === "dutchie" ? scrapeDutchieGroup :
+        scrapeSearchGroup;
 
       if (group.splitByWeight) {
         // No per-weight URL available — scrape everything matching the brand,
@@ -1105,8 +1120,6 @@ async function main() {
         all = all.concat(groupProducts);
       }
     }
-    const dutchieProducts = await scrapeDutchie(browser);
-    all = all.concat(dutchieProducts);
     console.log(`\n  ${all.length} total variants`);
     const restockedAndNew = await findRestockedAndNew(all);
     console.log(`  🆕 ${restockedAndNew.length} new/restocked`);
