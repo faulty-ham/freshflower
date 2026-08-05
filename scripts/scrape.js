@@ -157,6 +157,16 @@ const SEARCH_GROUPS = [
     store:  "Exotix", brand: "Teds Budz", platform: "meadow", splitByWeight: true,
   },
   {
+    title:  "Exotix - Nameless Genetics",
+    url:    "https://www.exotixflower.com/shopsj?meadowQuery=categories%3D13532%26brands%3DNAMELESS%2BGENETICS&meadow-page=collections%2Fcategories%2F13532",
+    store:  "Exotix", brand: "Nameless Genetics", platform: "meadow", splitByWeight: true,
+  },
+  {
+    title:  "Exotix - Bosky",
+    url:    "https://www.exotixflower.com/shopsj?meadowQuery=categories%3D13532%26brands%3DBOSKY&meadow-page=collections%2Fcategories%2F13532",
+    store:  "Exotix", brand: "Bosky", platform: "meadow", splitByWeight: true,
+  },
+  {
     title:  "Haze - Fig Farms - 3.5g",
     // haze420.com turned out to gate the menu behind a location picker that
     // wasn't reliably click-through-able headlessly. Same fix as Cake House:
@@ -189,6 +199,14 @@ const SEARCH_GROUPS = [
     title:  "Haze - Wood Wide - 3.5g",
     url:    "https://www.iheartjane.com/stores/26/haze-dispensary-almaden-rd/menu?filters%5Bavailable_weights%5D%5B%5D=eighth%20ounce&filters%5Bbrand%5D%5B%5D=Wood%20Wide",
     store:  "Haze", brand: "Wood Wide", weight: "3.5g", platform: "jane",
+  },
+  {
+    title:  "Haze - Bosky Genetics - 3.5g",
+    // URL you gave was titled "Exotix - Bosky - 3.5g" but points to
+    // haze-dispensary-almaden-rd (store 26) — same store as every other
+    // Haze group, not Exotix. Renamed to keep the store filter accurate.
+    url:    "https://www.iheartjane.com/stores/26/haze-dispensary-almaden-rd/menu?filters%5Broot_types%5D%5B%5D=flower&filters%5Bavailable_weights%5D%5B%5D=eighth%20ounce&filters%5Bbrand%5D%5B%5D=Bosky%20Genetics",
+    store:  "Haze", brand: "Bosky Genetics", weight: "3.5g", platform: "jane",
   },
   {
     title:  "Harborside - Fig Farms - 3.5g",
