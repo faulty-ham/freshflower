@@ -88,6 +88,21 @@ create table if not exists flower.favorites (
 );
 
 create index if not exists favorites_type_idx on flower.favorites (type);
+
+-- ── Strain match confirmations ───────────────────────────────
+-- Ties a FreshFlower (brand, strain) pair to a VaporTrails strain id, once
+-- confirmed or manually corrected via the dashboard's thumbs-up/down widget.
+-- vt_strain_id is null when status='no_match' (user confirmed no VT
+-- counterpart exists, so stop suggesting one).
+create table if not exists flower.strain_matches (
+  id            bigserial    primary key,
+  ff_brand      text         not null,
+  ff_strain     text         not null,
+  vt_strain_id  bigint,
+  status        text         not null check (status in ('confirmed', 'no_match')),
+  created_at    timestamptz  not null default now(),
+  unique (ff_brand, ff_strain)
+);
 create index if not exists favorites_brand_idx on flower.favorites (brand);
 
 -- ── Views ─────────────────────────────────────────────────────
@@ -127,6 +142,7 @@ alter table flower.products         enable row level security;
 alter table flower.availability_log enable row level security;
 alter table flower.favorites        enable row level security;
 alter table flower.search_groups    enable row level security;
+alter table flower.strain_matches   enable row level security;
 
 -- Public read on products and log
 drop policy if exists "public can read products" on flower.products;
@@ -159,10 +175,27 @@ drop policy if exists "public can delete favorites" on flower.favorites;
 create policy "public can delete favorites"
   on flower.favorites for delete using (true);
 
+drop policy if exists "public can read strain_matches" on flower.strain_matches;
+create policy "public can read strain_matches"
+  on flower.strain_matches for select using (true);
+
+drop policy if exists "public can insert strain_matches" on flower.strain_matches;
+create policy "public can insert strain_matches"
+  on flower.strain_matches for insert with check (true);
+
+drop policy if exists "public can update strain_matches" on flower.strain_matches;
+create policy "public can update strain_matches"
+  on flower.strain_matches for update using (true);
+
+drop policy if exists "public can delete strain_matches" on flower.strain_matches;
+create policy "public can delete strain_matches"
+  on flower.strain_matches for delete using (true);
+
 -- Grant flower schema access to API roles
 grant usage on schema flower to anon, authenticated, service_role;
 grant select on all tables in schema flower to anon, authenticated;
 grant insert, update, delete on flower.favorites to anon, authenticated;
+grant insert, update, delete on flower.strain_matches to anon, authenticated;
 -- service_role (used by the scraper's service key) needs full read/write on
 -- everything, not just favorites — existing tables happened to already have
 -- this from an earlier setup step, but search_groups didn't inherit it.

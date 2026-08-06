@@ -90,6 +90,9 @@ main { max-width: 900px; margin: 0 auto; padding: 20px; }
 
 /* -- Row list -- */
 .row-list { display: flex; flex-direction: column; }
+.row-outer { display: flex; align-items: center; border-bottom: 1px solid var(--border); }
+.row-outer:hover { background: var(--bg2); }
+.row-outer .row { border-bottom: none; flex: 1; min-width: 0; }
 .row {
   display: grid; grid-template-columns: 1fr auto auto auto auto; gap: 14px; align-items: center;
   padding: 11px 4px; text-decoration: none; color: var(--text);
@@ -101,6 +104,30 @@ main { max-width: 900px; margin: 0 auto; padding: 20px; }
 .row-thc { font-size: 11px; color: var(--dim); font-family: 'DM Mono', monospace; white-space: nowrap; }
 .row-weight { font-size: 12px; color: var(--muted); font-family: 'DM Mono', monospace; white-space: nowrap; }
 .row-price { font-size: 14px; font-weight: 700; font-family: 'DM Mono', monospace; color: var(--text); white-space: nowrap; }
+
+/* -- Rating widget (VaporTrails match) -- */
+.rating-widget { display: flex; align-items: center; gap: 6px; padding: 0 10px 0 4px; white-space: nowrap; flex-shrink: 0; }
+.rating-badge { font-size: 16px; }
+.suggest-label {
+  color: var(--muted); font-family: 'DM Mono', monospace; font-size: 10px;
+  max-width: 90px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.thumb {
+  background: var(--bg3); border: 1px solid var(--border2); border-radius: 6px;
+  padding: 2px 7px; font-size: 12px; cursor: pointer; line-height: 1.5;
+}
+.thumb:hover { border-color: var(--amber); }
+.rate-search {
+  background: var(--bg3); border: 1px solid var(--border); color: var(--dim);
+  border-radius: 6px; padding: 3px 9px; font-size: 10px; font-family: 'DM Mono', monospace; cursor: pointer;
+}
+.rate-search:hover { color: var(--text); border-color: var(--border2); }
+.manual-select {
+  background: var(--bg3); border: 1px solid var(--border2); color: var(--text);
+  font-size: 11px; padding: 4px 6px; border-radius: 6px; max-width: 150px;
+}
+.manual-confirm-btn { background: var(--teal-dim); border-color: var(--teal); color: var(--teal); }
+
 .row-added {
   font-size: 10px; font-family: 'DM Mono', monospace; padding: 3px 7px; border-radius: 100px;
   white-space: nowrap; text-align: center;
@@ -168,17 +195,60 @@ function canonicalBrand(raw) {
   const key = (raw ?? "").toLowerCase().trim();
   return BRAND_ALIASES[key] || (raw ?? "").trim();
 }
+
+// Confirmed FreshFlower → VaporTrails brand-name mapping (verified against
+// VaporTrails' real brand list — see conversation history). Brands not
+// listed here have no VaporTrails counterpart, so no rating lookup happens
+// for them at all.
+const VT_BRAND_MAP = {
+  "Bosky": "Bosky",
+  "Cam": "Cam",
+  "Cream of the Crop": "Cream of the Crop",
+  "Fig Farms": "Fig Farms",
+  "Green Dragon": "Green Dragon",
+  "Lumpy's Flowers": "Lumpy's",
+  "Maven": "Maven Genetics",
+  "No Till Kings": "No Till Kings",
+  "Pure Beauty": "Pure Beauty",
+  "Seed Junky": "Seed Junky Genetics",
+  "Snowtill": "Snowtill",
+  "Team Elite Genetics": "Team Elite Genetics",
+  "Teds Budz": "Ted's Budz",
+  "Top Shelf Cultivation": "Top Shelf Cultivation",
+  "UpNorth": "Upnorth",
+  "Wizard Trees": "Wizard Trees",
+  "Wood Wide": "Wood Wide",
+};
+function vtBrandFor(ffCanonicalBrand) {
+  return VT_BRAND_MAP[ffCanonicalBrand] || null;
+}
 // --------------------------------------------------------------------------------
 
-const API = (path) => fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+const API = (path, opts = {}) => fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+  headers: {
+    "apikey":          SUPABASE_ANON,
+    "Authorization":   `Bearer ${SUPABASE_ANON}`,
+    "Content-Type":    "application/json",
+    "Accept-Profile":  "flower",
+    "Content-Profile": "flower",
+    "Prefer":          "return=representation",
+    ...opts.headers,
+  },
+  ...opts,
+});
+
+// VaporTrails lives in the same Supabase project's `public` schema.
+const VT_API = (path) => fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
   headers: {
     "apikey":         SUPABASE_ANON,
     "Authorization":  `Bearer ${SUPABASE_ANON}`,
-    "Accept-Profile": "flower",
+    "Accept-Profile": "public",
   },
 });
 
 let allProducts = [];
+let vtStrains = [];       // [{ id, brand, strain, rating }]
+let strainMatches = [];   // [{ ff_brand, ff_strain, vt_strain_id, status }]
 let filters = { stores: new Set(), brands: new Set(), weights: new Set(), newness: "" };
 
 async function fetchProducts() {
@@ -193,6 +263,52 @@ async function fetchProducts() {
   if (!res.ok) throw new Error(`Products fetch failed: ${res.status}`);
   return res.json();
 }
+
+async function fetchVtStrains() {
+  try {
+    const res = await VT_API("strains?select=id,brand,strain,rating");
+    if (!res.ok) return [];
+    return res.json();
+  } catch (e) {
+    return []; // VaporTrails being unreachable shouldn't break the FreshFlower dashboard
+  }
+}
+
+async function fetchStrainMatches() {
+  try {
+    const res = await API("strain_matches?select=ff_brand,ff_strain,vt_strain_id,status");
+    if (!res.ok) return [];
+    return res.json();
+  } catch (e) {
+    return [];
+  }
+}
+
+// -- Fuzzy strain matching --------------------------------------------------
+function normalizeStrainName(s) {
+  return (s ?? "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+function strainSimilarity(a, b) {
+  const na = normalizeStrainName(a), nb = normalizeStrainName(b);
+  if (!na || !nb) return 0;
+  if (na === nb) return 1;
+  if (na.includes(nb) || nb.includes(na)) return 0.85;
+  const wordsA = new Set(na.split(" ").filter(Boolean));
+  const wordsB = new Set(nb.split(" ").filter(Boolean));
+  const common = [...wordsA].filter(w => wordsB.has(w)).length;
+  const total = new Set([...wordsA, ...wordsB]).size;
+  return total === 0 ? 0 : common / total;
+}
+function findBestVtMatch(ffStrain, vtCandidates) {
+  let best = null, bestScore = 0;
+  for (const vt of vtCandidates) {
+    const score = strainSimilarity(ffStrain, vt.strain);
+    if (score > bestScore) { bestScore = score; best = vt; }
+  }
+  return bestScore >= 0.3 ? best : null;
+}
+
+const RATING_EMOJI = { Great: "\u{1F525}", OK: "\u{1F333}", NG: "\u{1F5D1}\u{FE0F}" };
 
 function escapeHtml(s) {
   return String(s ?? "").replace(/[&<>"']/g, c => ({
@@ -310,6 +426,108 @@ function populateFilterOptions() {
   ], filters.newness, (value) => { filters.newness = value; render(); });
 }
 
+function findStrainMatch(ffBrand, ffStrain) {
+  const b = ffBrand.toLowerCase(), s = ffStrain.toLowerCase();
+  return strainMatches.find(m => m.ff_brand.toLowerCase() === b && m.ff_strain.toLowerCase() === s);
+}
+
+function renderRatingWidget(p) {
+  const canonical = canonicalBrand(p.search_group_brand);
+  const vtBrand = vtBrandFor(canonical);
+  if (!vtBrand) return `<div class="rating-widget"></div>`;
+
+  const vtCandidates = vtStrains.filter(v => (v.brand ?? "").toLowerCase().trim() === vtBrand.toLowerCase().trim());
+  const existing = findStrainMatch(p.brand, p.strain);
+  const dataAttrs = `data-ff-brand="${escapeHtml(p.brand)}" data-ff-strain="${escapeHtml(p.strain)}" data-vt-brand="${escapeHtml(vtBrand)}"`;
+
+  if (existing) {
+    if (existing.status === "no_match") return `<div class="rating-widget"></div>`;
+    const vt = vtStrains.find(v => v.id === existing.vt_strain_id);
+    if (!vt || !vt.rating || !RATING_EMOJI[vt.rating]) return `<div class="rating-widget"></div>`;
+    return `<div class="rating-widget"><span class="rating-badge" title="${escapeHtml(vt.strain)}">${RATING_EMOJI[vt.rating]}</span></div>`;
+  }
+
+  const suggestion = findBestVtMatch(p.strain, vtCandidates);
+  if (!suggestion) {
+    if (vtCandidates.length === 0) return `<div class="rating-widget"></div>`;
+    return `<div class="rating-widget" ${dataAttrs}>
+      <button class="rate-search" data-action="reject">Match?</button>
+    </div>`;
+  }
+
+  const emoji = suggestion.rating && RATING_EMOJI[suggestion.rating] ? ` ${RATING_EMOJI[suggestion.rating]}` : "";
+  return `<div class="rating-widget" ${dataAttrs} data-vt-id="${suggestion.id}">
+    <span class="suggest-label" title="${escapeHtml(suggestion.strain)}">${escapeHtml(suggestion.strain)}${emoji}</span>
+    <button class="thumb" data-action="confirm" title="Confirm match">&#128077;</button>
+    <button class="thumb" data-action="reject" title="Wrong match">&#128078;</button>
+  </div>`;
+}
+
+function openManualPicker(widgetEl, ffBrand, ffStrain, vtBrand) {
+  const candidates = vtStrains
+    .filter(v => (v.brand ?? "").toLowerCase().trim() === vtBrand.toLowerCase().trim())
+    .sort((a, b) => a.strain.localeCompare(b.strain));
+  const options = candidates.map(v => {
+    const emoji = v.rating && RATING_EMOJI[v.rating] ? ` ${RATING_EMOJI[v.rating]}` : "";
+    return `<option value="${v.id}">${escapeHtml(v.strain)}${emoji}</option>`;
+  }).join("");
+  widgetEl.dataset.ffBrand = ffBrand;
+  widgetEl.dataset.ffStrain = ffStrain;
+  widgetEl.innerHTML = `
+    <select class="manual-select">
+      <option value="">Pick the right strain&hellip;</option>
+      ${options}
+      <option value="__nomatch__">No match exists</option>
+    </select>
+    <button class="thumb manual-confirm-btn" data-action="manual-confirm" title="Save">&#10003;</button>
+  `;
+}
+
+async function confirmMatch(ffBrand, ffStrain, vtStrainId) {
+  await API(`strain_matches?on_conflict=ff_brand,ff_strain`, {
+    method: "POST",
+    headers: { "Prefer": "resolution=merge-duplicates,return=representation" },
+    body: JSON.stringify({ ff_brand: ffBrand, ff_strain: ffStrain, vt_strain_id: vtStrainId, status: "confirmed" }),
+  });
+  strainMatches = strainMatches.filter(m => !(m.ff_brand === ffBrand && m.ff_strain === ffStrain));
+  strainMatches.push({ ff_brand: ffBrand, ff_strain: ffStrain, vt_strain_id: vtStrainId, status: "confirmed" });
+  render();
+}
+
+async function saveNoMatch(ffBrand, ffStrain) {
+  await API(`strain_matches?on_conflict=ff_brand,ff_strain`, {
+    method: "POST",
+    headers: { "Prefer": "resolution=merge-duplicates,return=representation" },
+    body: JSON.stringify({ ff_brand: ffBrand, ff_strain: ffStrain, vt_strain_id: null, status: "no_match" }),
+  });
+  strainMatches = strainMatches.filter(m => !(m.ff_brand === ffBrand && m.ff_strain === ffStrain));
+  strainMatches.push({ ff_brand: ffBrand, ff_strain: ffStrain, vt_strain_id: null, status: "no_match" });
+  render();
+}
+
+document.getElementById("main").addEventListener("click", (e) => {
+  const btn = e.target.closest("[data-action]");
+  if (!btn) return;
+  e.preventDefault();
+  e.stopPropagation();
+  const widget = btn.closest(".rating-widget");
+  const action = btn.dataset.action;
+
+  if (action === "confirm") {
+    confirmMatch(widget.dataset.ffBrand, widget.dataset.ffStrain, parseInt(widget.dataset.vtId, 10));
+  } else if (action === "reject") {
+    openManualPicker(widget, widget.dataset.ffBrand, widget.dataset.ffStrain, widget.dataset.vtBrand);
+  } else if (action === "manual-confirm") {
+    const select = widget.querySelector(".manual-select");
+    const val = select.value;
+    if (val === "__nomatch__") {
+      saveNoMatch(widget.dataset.ffBrand, widget.dataset.ffStrain);
+    } else if (val) {
+      confirmMatch(widget.dataset.ffBrand, widget.dataset.ffStrain, parseInt(val, 10));
+    }
+  }
+});
+
 function render() {
   const main = document.getElementById("main");
 
@@ -373,6 +591,7 @@ function render() {
         : "-";
       const thc = p.thc_pct != null ? `THC ${p.thc_pct}%` : "";
       const href = p.product_url || "#";
+      html += `<div class="row-outer">`;
       html += `<a class="row" href="${escapeHtml(href)}" target="_blank" rel="noopener">`;
       html += `  <div class="row-main">`;
       html += `    <div class="row-strain">${escapeHtml(p.strain || "Unknown")}</div>`;
@@ -382,6 +601,8 @@ function render() {
       html += `  <div class="row-price">$${p.price != null ? Number(p.price).toFixed(2) : "-"}</div>`;
       html += `  <div class="row-added ${ageClass}">Added ${escapeHtml(addedLabel)}</div>`;
       html += `</a>`;
+      html += renderRatingWidget(p);
+      html += `</div>`;
     }
     html += `</div></div>`;
   }
@@ -390,7 +611,11 @@ function render() {
 
 async function init() {
   try {
-    allProducts = await fetchProducts();
+    [allProducts, vtStrains, strainMatches] = await Promise.all([
+      fetchProducts(),
+      fetchVtStrains(),
+      fetchStrainMatches(),
+    ]);
     populateFilterOptions();
     render();
   } catch (err) {
