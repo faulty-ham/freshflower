@@ -221,18 +221,21 @@ function vtBrandFor(ffCanonicalBrand) {
 }
 // --------------------------------------------------------------------------------
 
-const API = (path, opts = {}) => fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
-  headers: {
-    "apikey":          SUPABASE_ANON,
-    "Authorization":   `Bearer ${SUPABASE_ANON}`,
-    "Content-Type":    "application/json",
-    "Accept-Profile":  "flower",
-    "Content-Profile": "flower",
-    "Prefer":          "return=representation",
-    ...opts.headers,
-  },
-  ...opts,
-});
+const API = (path, opts = {}) => {
+  const { headers: extraHeaders, ...restOpts } = opts;
+  return fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+    headers: {
+      "apikey":          SUPABASE_ANON,
+      "Authorization":   `Bearer ${SUPABASE_ANON}`,
+      "Content-Type":    "application/json",
+      "Accept-Profile":  "flower",
+      "Content-Profile": "flower",
+      "Prefer":          "return=representation",
+      ...extraHeaders,
+    },
+    ...restOpts,
+  });
+};
 
 // VaporTrails lives in the same Supabase project's `public` schema.
 const VT_API = (path) => fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
