@@ -90,36 +90,33 @@ main { max-width: 900px; margin: 0 auto; padding: 20px; }
 
 /* -- Row list -- */
 .row-list { display: flex; flex-direction: column; }
-.row-outer { display: flex; align-items: center; border-bottom: 1px solid var(--border); }
-.row-outer:hover { background: var(--bg2); }
-.row-outer .row { border-bottom: none; flex: 1; min-width: 0; }
 .row {
   display: grid; grid-template-columns: 1fr auto auto auto auto; gap: 14px; align-items: center;
   padding: 11px 4px; text-decoration: none; color: var(--text);
   border-bottom: 1px solid var(--border); transition: background 0.1s;
 }
 .row:hover { background: var(--bg2); }
-.row-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.row-strain { font-size: 14px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.row-main { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.row-strain { font-size: 14px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex-shrink: 1; }
 .row-thc { font-size: 11px; color: var(--dim); font-family: 'DM Mono', monospace; white-space: nowrap; }
 .row-weight { font-size: 12px; color: var(--muted); font-family: 'DM Mono', monospace; white-space: nowrap; }
 .row-price { font-size: 14px; font-weight: 700; font-family: 'DM Mono', monospace; color: var(--text); white-space: nowrap; }
 
-/* -- Rating widget (VaporTrails match) -- */
-.rating-widget { display: flex; align-items: center; gap: 6px; padding: 0 10px 0 4px; white-space: nowrap; flex-shrink: 0; }
-.rating-badge { font-size: 16px; }
+/* -- Rating widget (VaporTrails match) -- sits inline right after the strain name */
+.rating-widget { display: flex; align-items: center; gap: 5px; white-space: nowrap; flex-shrink: 0; }
+.rating-badge { font-size: 15px; }
 .suggest-label {
   color: var(--muted); font-family: 'DM Mono', monospace; font-size: 10px;
-  max-width: 90px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  max-width: 80px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .thumb {
   background: var(--bg3); border: 1px solid var(--border2); border-radius: 6px;
-  padding: 2px 7px; font-size: 12px; cursor: pointer; line-height: 1.5;
+  padding: 1px 6px; font-size: 11px; cursor: pointer; line-height: 1.5;
 }
 .thumb:hover { border-color: var(--amber); }
 .rate-search {
   background: var(--bg3); border: 1px solid var(--border); color: var(--dim);
-  border-radius: 6px; padding: 3px 9px; font-size: 10px; font-family: 'DM Mono', monospace; cursor: pointer;
+  border-radius: 6px; padding: 2px 8px; font-size: 9px; font-family: 'DM Mono', monospace; cursor: pointer;
 }
 .rate-search:hover { color: var(--text); border-color: var(--border2); }
 .manual-select {
@@ -166,7 +163,7 @@ main { max-width: 900px; margin: 0 auto; padding: 20px; }
 </main>
 
 <script>
-// -- Config --------------------------------------------------------------------
+// -- Config -------------------------------------------------------------------
 const SUPABASE_URL  = "https://oapjuqurbfimxopjpqgj.supabase.co";
 const SUPABASE_ANON = "sb_publishable_B6dXNLCuGE3n3z5qazgdLg_ZE-S4ZLr";
 // (age color tiers are defined inline in render(): <=30d green, <=60d blue, <=90d amber, older red)
@@ -224,18 +221,21 @@ function vtBrandFor(ffCanonicalBrand) {
 }
 // --------------------------------------------------------------------------------
 
-const API = (path, opts = {}) => fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
-  headers: {
-    "apikey":          SUPABASE_ANON,
-    "Authorization":   `Bearer ${SUPABASE_ANON}`,
-    "Content-Type":    "application/json",
-    "Accept-Profile":  "flower",
-    "Content-Profile": "flower",
-    "Prefer":          "return=representation",
-    ...opts.headers,
-  },
-  ...opts,
-});
+const API = (path, opts = {}) => {
+  const { headers: extraHeaders, ...restOpts } = opts;
+  return fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+    headers: {
+      "apikey":          SUPABASE_ANON,
+      "Authorization":   `Bearer ${SUPABASE_ANON}`,
+      "Content-Type":    "application/json",
+      "Accept-Profile":  "flower",
+      "Content-Profile": "flower",
+      "Prefer":          "return=representation",
+      ...extraHeaders,
+    },
+    ...restOpts,
+  });
+};
 
 // VaporTrails lives in the same Supabase project's `public` schema.
 const VT_API = (path) => fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
@@ -506,11 +506,16 @@ async function saveNoMatch(ffBrand, ffStrain) {
 }
 
 document.getElementById("main").addEventListener("click", (e) => {
-  const btn = e.target.closest("[data-action]");
-  if (!btn) return;
+  const widget = e.target.closest(".rating-widget");
+  if (!widget) return;
+  // Any click inside the widget (including opening the <select>, before an
+  // option is even chosen) must not trigger the row's own link navigation,
+  // now that the widget lives inside the <a>.
   e.preventDefault();
   e.stopPropagation();
-  const widget = btn.closest(".rating-widget");
+
+  const btn = e.target.closest("[data-action]");
+  if (!btn) return; // clicked inside the widget but not an action button
   const action = btn.dataset.action;
 
   if (action === "confirm") {
@@ -591,18 +596,16 @@ function render() {
         : "-";
       const thc = p.thc_pct != null ? `THC ${p.thc_pct}%` : "";
       const href = p.product_url || "#";
-      html += `<div class="row-outer">`;
       html += `<a class="row" href="${escapeHtml(href)}" target="_blank" rel="noopener">`;
       html += `  <div class="row-main">`;
       html += `    <div class="row-strain">${escapeHtml(p.strain || "Unknown")}</div>`;
+      html += renderRatingWidget(p);
       html += `  </div>`;
       html += `  <div class="row-thc">${escapeHtml(thc)}</div>`;
       html += `  <div class="row-weight">${escapeHtml(p.weight_label || "")}</div>`;
       html += `  <div class="row-price">$${p.price != null ? Number(p.price).toFixed(2) : "-"}</div>`;
       html += `  <div class="row-added ${ageClass}">Added ${escapeHtml(addedLabel)}</div>`;
       html += `</a>`;
-      html += renderRatingWidget(p);
-      html += `</div>`;
     }
     html += `</div></div>`;
   }
