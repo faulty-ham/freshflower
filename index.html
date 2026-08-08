@@ -219,6 +219,18 @@ const VT_BRAND_MAP = {
 function vtBrandFor(ffCanonicalBrand) {
   return VT_BRAND_MAP[ffCanonicalBrand] || null;
 }
+// VaporTrails brand names sometimes have decorative emoji attached (e.g.
+// "Fig Farms 🌿", "Wizard Trees🧙🏻‍♂️") that aren't part of the actual brand
+// identity. Strip those before comparing so matching works regardless.
+function stripDecorative(s) {
+  return (s ?? "")
+    .replace(/[^\x00-\x7F]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+function brandsMatch(a, b) {
+  return stripDecorative(a).toLowerCase() === stripDecorative(b).toLowerCase();
+}
 // --------------------------------------------------------------------------------
 
 const API = (path, opts = {}) => {
@@ -436,7 +448,7 @@ function renderRatingWidget(p) {
   const vtBrand = vtBrandFor(canonical);
   if (!vtBrand) return `<div class="rating-widget"></div>`;
 
-  const vtCandidates = vtStrains.filter(v => (v.brand ?? "").toLowerCase().trim() === vtBrand.toLowerCase().trim());
+  const vtCandidates = vtStrains.filter(v => brandsMatch(v.brand, vtBrand));
   const existing = findStrainMatch(p.brand, p.strain);
   const dataAttrs = `data-ff-brand="${escapeHtml(p.brand)}" data-ff-strain="${escapeHtml(p.strain)}" data-vt-brand="${escapeHtml(vtBrand)}"`;
 
@@ -465,7 +477,7 @@ function renderRatingWidget(p) {
 
 function openManualPicker(widgetEl, ffBrand, ffStrain, vtBrand) {
   const candidates = vtStrains
-    .filter(v => (v.brand ?? "").toLowerCase().trim() === vtBrand.toLowerCase().trim())
+    .filter(v => brandsMatch(v.brand, vtBrand))
     .sort((a, b) => a.strain.localeCompare(b.strain));
   const options = candidates.map(v => {
     const emoji = v.rating && RATING_EMOJI[v.rating] ? ` ${RATING_EMOJI[v.rating]}` : "";
