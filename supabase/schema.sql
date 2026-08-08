@@ -196,6 +196,11 @@ grant usage on schema flower to anon, authenticated, service_role;
 grant select on all tables in schema flower to anon, authenticated;
 grant insert, update, delete on flower.favorites to anon, authenticated;
 grant insert, update, delete on flower.strain_matches to anon, authenticated;
+-- Any table anon/authenticated can INSERT into with a bigserial id column
+-- also needs USAGE on the backing sequence, separate from table-level INSERT
+-- — missing this caused strain_matches inserts to fail with 42501 despite
+-- correct RLS policies and table grants.
+grant usage, select on all sequences in schema flower to anon, authenticated;
 -- service_role (used by the scraper's service key) needs full read/write on
 -- everything, not just favorites — existing tables happened to already have
 -- this from an earlier setup step, but search_groups didn't inherit it.
@@ -203,6 +208,8 @@ grant select, insert, update, delete on all tables in schema flower to service_r
 grant usage, select on all sequences in schema flower to service_role;
 alter default privileges in schema flower
   grant select on tables to anon, authenticated;
+alter default privileges in schema flower
+  grant usage, select on sequences to anon, authenticated;
 alter default privileges in schema flower
   grant select, insert, update, delete on tables to service_role;
 alter default privileges in schema flower
