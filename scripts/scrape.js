@@ -387,12 +387,30 @@ async function upsertSearchGroup(group) {
   const { data, error } = await supabase.schema("flower").from("search_groups")
     .upsert({
       title: group.title, url: group.url,
-      store: group.store, brand: group.brand, weight_label: group.weight,
+      store: group.store, brand: group.brand, weight_label: group.weight ?? null,
+      platform: group.platform ?? "jane", split_by_weight: !!group.splitByWeight,
     }, { onConflict: "title" })
     .select("id")
     .single();
   if (error) { console.error("  search_group upsert error:", error.message); return null; }
   return data.id;
+}
+
+// Groups added via the dashboard's "Add Search Group" modal live only in the
+// database, not in the SEARCH_GROUPS array below — fetch anything not
+// already covered by a hardcoded title so it actually gets scraped too.
+async function fetchDashboardAddedGroups() {
+  const hardcodedTitles = new Set(SEARCH_GROUPS.map(g => g.title));
+  const { data, error } = await supabase.schema("flower").from("search_groups").select("*");
+  if (error) { console.error("  fetch search_groups error:", error.message); return []; }
+  return (data ?? [])
+    .filter(row => !hardcodedTitles.has(row.title))
+    .map(row => ({
+      title: row.title, url: row.url, store: row.store, brand: row.brand,
+      weight: row.weight_label ?? undefined,
+      platform: row.platform || "jane",
+      splitByWeight: !!row.split_by_weight,
+    }));
 }
 
 async function scrapeSearchGroup(browser, group) {
@@ -1301,8 +1319,14 @@ async function main() {
   console.log(`\n🌿 FreshFlower scrape — ${new Date().toISOString()}`);
   const browser = await chromium.launch({ headless: true });
   try {
+    const dashboardGroups = await fetchDashboardAddedGroups();
+    if (dashboardGroups.length > 0) {
+      console.log(`\n[Dashboard] ${dashboardGroups.length} additional group(s) added via the dashboard: ${JSON.stringify(dashboardGroups.map(g => g.title))}`);
+    }
+    const allGroups = [...SEARCH_GROUPS, ...dashboardGroups];
+
     let all = [];
-    for (const group of SEARCH_GROUPS) {
+    for (const group of allGroups) {
       const scrapeFn =
         group.platform === "meadow"  ? scrapeMeadowGroup :
         group.platform === "dutchie" ? scrapeDutchieGroup :

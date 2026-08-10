@@ -43,14 +43,23 @@ create index if not exists products_base_idx    on flower.products (product_base
 -- "Store - Brand - Weight" format so it can be split for filtering.
 
 create table if not exists flower.search_groups (
-  id            bigserial    primary key,
-  title         text         not null unique,   -- "Cake House - Fig Farms - 3.5g"
-  url           text         not null,
-  store         text         not null,
-  brand         text         not null,
-  weight_label  text         not null,
-  created_at    timestamptz  not null default now()
+  id              bigserial    primary key,
+  title           text         not null unique,   -- "Cake House - Fig Farms - 3.5g"
+  url             text         not null,
+  store           text         not null,
+  brand           text         not null,
+  weight_label    text,                            -- null when split_by_weight is true
+  platform        text,                            -- "jane" | "meadow" | "dutchie" — auto-detected from URL
+  split_by_weight boolean      not null default false,
+  created_at      timestamptz  not null default now()
 );
+
+-- The table above already existed before platform/split_by_weight/nullable-
+-- weight_label were added, so CREATE TABLE IF NOT EXISTS alone won't apply
+-- those changes retroactively — do it explicitly.
+alter table flower.search_groups add column if not exists platform text;
+alter table flower.search_groups add column if not exists split_by_weight boolean not null default false;
+alter table flower.search_groups alter column weight_label drop not null;
 
 alter table flower.products
   add column if not exists search_group_id bigint references flower.search_groups (id);
@@ -157,6 +166,10 @@ drop policy if exists "public can read search_groups" on flower.search_groups;
 create policy "public can read search_groups"
   on flower.search_groups for select using (true);
 
+drop policy if exists "public can insert search_groups" on flower.search_groups;
+create policy "public can insert search_groups"
+  on flower.search_groups for insert with check (true);
+
 -- Favorites: public can read, insert, update, delete
 -- (single-user personal tool — no auth needed)
 drop policy if exists "public can read favorites" on flower.favorites;
@@ -196,6 +209,7 @@ grant usage on schema flower to anon, authenticated, service_role;
 grant select on all tables in schema flower to anon, authenticated;
 grant insert, update, delete on flower.favorites to anon, authenticated;
 grant insert, update, delete on flower.strain_matches to anon, authenticated;
+grant insert on flower.search_groups to anon, authenticated;
 -- Any table anon/authenticated can INSERT into with a bigserial id column
 -- also needs USAGE on the backing sequence, separate from table-level INSERT
 -- — missing this caused strain_matches inserts to fail with 42501 despite
