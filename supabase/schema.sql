@@ -112,6 +112,38 @@ create table if not exists flower.strain_matches (
   created_at    timestamptz  not null default now(),
   unique (ff_brand, ff_strain)
 );
+
+-- FreshFlower brand → VaporTrails brand name mapping. Was a hardcoded JS
+-- constant; moved here so the dashboard's "Brand Match" modal can edit it.
+create table if not exists flower.brand_matches (
+  id          bigserial    primary key,
+  ff_brand    text         not null unique,
+  vt_brand    text         not null,
+  created_at  timestamptz  not null default now()
+);
+
+-- Seed with the mapping already verified against VaporTrails' real brand
+-- list (see project history) — safe to re-run, only inserts what's missing.
+insert into flower.brand_matches (ff_brand, vt_brand) values
+  ('Bosky',                  'Bosky'),
+  ('Cam',                    'Cam'),
+  ('Cream of the Crop',      'Cream of the Crop'),
+  ('Fig Farms',              'Fig Farms'),
+  ('Green Dragon',           'Green Dragon'),
+  ('Lumpy''s Flowers',       'Lumpy''s'),
+  ('Maven',                  'Maven Genetics'),
+  ('No Till Kings',          'No Till Kings'),
+  ('Pure Beauty',            'Pure Beauty'),
+  ('Seed Junky',             'Seed Junky Genetics'),
+  ('Snowtill',               'Snowtill'),
+  ('Team Elite Genetics',    'Team Elite Genetics'),
+  ('Teds Budz',              'Ted''s Budz'),
+  ('Top Shelf Cultivation',  'Top Shelf Cultivation'),
+  ('UpNorth',                'Upnorth'),
+  ('Wizard Trees',           'Wizard Trees'),
+  ('Wood Wide',              'Wood Wide')
+on conflict (ff_brand) do nothing;
+
 create index if not exists favorites_brand_idx on flower.favorites (brand);
 
 -- ── Views ─────────────────────────────────────────────────────
@@ -152,6 +184,7 @@ alter table flower.availability_log enable row level security;
 alter table flower.favorites        enable row level security;
 alter table flower.search_groups    enable row level security;
 alter table flower.strain_matches   enable row level security;
+alter table flower.brand_matches    enable row level security;
 
 -- Public read on products and log
 drop policy if exists "public can read products" on flower.products;
@@ -169,6 +202,10 @@ create policy "public can read search_groups"
 drop policy if exists "public can insert search_groups" on flower.search_groups;
 create policy "public can insert search_groups"
   on flower.search_groups for insert with check (true);
+
+drop policy if exists "public can update search_groups" on flower.search_groups;
+create policy "public can update search_groups"
+  on flower.search_groups for update using (true);
 
 -- Favorites: public can read, insert, update, delete
 -- (single-user personal tool — no auth needed)
@@ -204,12 +241,29 @@ drop policy if exists "public can delete strain_matches" on flower.strain_matche
 create policy "public can delete strain_matches"
   on flower.strain_matches for delete using (true);
 
+drop policy if exists "public can read brand_matches" on flower.brand_matches;
+create policy "public can read brand_matches"
+  on flower.brand_matches for select using (true);
+
+drop policy if exists "public can insert brand_matches" on flower.brand_matches;
+create policy "public can insert brand_matches"
+  on flower.brand_matches for insert with check (true);
+
+drop policy if exists "public can update brand_matches" on flower.brand_matches;
+create policy "public can update brand_matches"
+  on flower.brand_matches for update using (true);
+
+drop policy if exists "public can delete brand_matches" on flower.brand_matches;
+create policy "public can delete brand_matches"
+  on flower.brand_matches for delete using (true);
+
 -- Grant flower schema access to API roles
 grant usage on schema flower to anon, authenticated, service_role;
 grant select on all tables in schema flower to anon, authenticated;
 grant insert, update, delete on flower.favorites to anon, authenticated;
 grant insert, update, delete on flower.strain_matches to anon, authenticated;
-grant insert on flower.search_groups to anon, authenticated;
+grant insert, update on flower.search_groups to anon, authenticated;
+grant insert, update, delete on flower.brand_matches to anon, authenticated;
 -- Any table anon/authenticated can INSERT into with a bigserial id column
 -- also needs USAGE on the backing sequence, separate from table-level INSERT
 -- — missing this caused strain_matches inserts to fail with 42501 despite
