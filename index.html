@@ -202,6 +202,7 @@ main { max-width: 900px; margin: 0 auto; padding: 20px; }
     <button class="clear-filters" id="clear-filters-btn">Clear filters</button>
     <button class="clear-filters" id="search-groups-list-btn">Search Groups List</button>
     <button class="clear-filters" id="add-search-group-btn">Add Search Groups</button>
+    <button class="clear-filters" id="brand-match-btn">Brand Match</button>
   </div>
 </header>
 
@@ -244,31 +245,13 @@ function canonicalBrand(raw) {
   return BRAND_ALIASES[key] || (raw ?? "").trim();
 }
 
-// Confirmed FreshFlower → VaporTrails brand-name mapping (verified against
-// VaporTrails' real brand list — see conversation history). Brands not
-// listed here have no VaporTrails counterpart, so no rating lookup happens
-// for them at all.
-const VT_BRAND_MAP = {
-  "Bosky": "Bosky",
-  "Cam": "Cam",
-  "Cream of the Crop": "Cream of the Crop",
-  "Fig Farms": "Fig Farms",
-  "Green Dragon": "Green Dragon",
-  "Lumpy's Flowers": "Lumpy's",
-  "Maven": "Maven Genetics",
-  "No Till Kings": "No Till Kings",
-  "Pure Beauty": "Pure Beauty",
-  "Seed Junky": "Seed Junky Genetics",
-  "Snowtill": "Snowtill",
-  "Team Elite Genetics": "Team Elite Genetics",
-  "Teds Budz": "Ted's Budz",
-  "Top Shelf Cultivation": "Top Shelf Cultivation",
-  "UpNorth": "Upnorth",
-  "Wizard Trees": "Wizard Trees",
-  "Wood Wide": "Wood Wide",
-};
+// FreshFlower → VaporTrails brand mapping now lives in flower.brand_matches
+// (editable via the "Brand Match" modal) instead of being hardcoded here.
+// brandMatches is populated in init() / refreshed after any edit.
 function vtBrandFor(ffCanonicalBrand) {
-  return VT_BRAND_MAP[ffCanonicalBrand] || null;
+  const key = (ffCanonicalBrand ?? "").toLowerCase().trim();
+  const m = brandMatches.find(x => (x.ff_brand ?? "").toLowerCase().trim() === key);
+  return m ? m.vt_brand : null;
 }
 // VaporTrails brand names sometimes have decorative emoji attached (e.g.
 // "Fig Farms 🌿", "Wizard Trees🧙🏻‍♂️") that aren't part of the actual brand
@@ -312,6 +295,7 @@ const VT_API = (path) => fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
 let allProducts = [];
 let vtStrains = [];       // [{ id, brand, strain, rating }]
 let strainMatches = [];   // [{ ff_brand, ff_strain, vt_strain_id, status }]
+let brandMatches = [];    // [{ ff_brand, vt_brand }]
 let filters = { stores: new Set(), brands: new Set(), weights: new Set(), newness: "" };
 
 async function fetchProducts() {
@@ -340,6 +324,16 @@ async function fetchVtStrains() {
 async function fetchStrainMatches() {
   try {
     const res = await API("strain_matches?select=ff_brand,ff_strain,vt_strain_id,status");
+    if (!res.ok) return [];
+    return res.json();
+  } catch (e) {
+    return [];
+  }
+}
+
+async function fetchBrandMatches() {
+  try {
+    const res = await API("brand_matches?select=ff_brand,vt_brand");
     if (!res.ok) return [];
     return res.json();
   } catch (e) {
@@ -402,7 +396,79 @@ async function openSearchGroupsListModal() {
   `);
 }
 
-function openAddSearchGroupModal() {
+async function fetchAllSearchGroups() {
+  const res = await API("search_groups?select=*");
+  return res.ok ? await res.json() : [];
+}
+
+function getAllCanonicalFFBrands(groups) {
+  return [...new Set(groups.map(g => canonicalBrand(g.brand)).filter(Boolean))].sort();
+}
+
+async function openBrandMatchModal() {
+  openModal(`<h2>Brand Match <button class="modal-close" data-action="close-modal">&times;</button></h2><p class="modal-hint">Loading&hellip;</p>`);
+  const groups = await fetchAllSearchGroups();
+  const ffBrands = getAllCanonicalFFBrands(groups);
+  const vtBrandOptions = [...new Set(vtStrains.map(v => v.brand).filter(Boolean))].sort();
+
+  const rows = ffBrands.map(ff => {
+    const existing = brandMatches.find(m => (m.ff_brand ?? "").toLowerCase().trim() === ff.toLowerCase());
+    if (existing) {
+      return `<tr>
+        <td>${escapeHtml(ff)}</td>
+        <td>${escapeHtml(existing.vt_brand)}</td>
+        <td><button class="thumb" data-action="unmatch-brand" data-ff-brand="${escapeHtml(ff)}">Unmatch</button></td>
+      </tr>`;
+    }
+    const options = vtBrandOptions.map(vt => `<option value="${escapeHtml(vt)}">${escapeHtml(vt)}</option>`).join("");
+    return `<tr>
+      <td>${escapeHtml(ff)}</td>
+      <td colspan="2">
+        <select class="manual-select brand-match-select">
+          <option value="">Pick VaporTrails brand&hellip;</option>
+          ${options}
+        </select>
+        <button class="thumb" data-action="save-brand-match" data-ff-brand="${escapeHtml(ff)}">Save</button>
+      </td>
+    </tr>`;
+  }).join("");
+
+  openModal(`
+    <h2>Brand Match <button class="modal-close" data-action="close-modal">&times;</button></h2>
+    <table class="sg-list-table">
+      <thead><tr><th>FreshFlower Brand</th><th>VaporTrails Match</th><th></th></tr></thead>
+      <tbody>${rows || `<tr><td colspan="3" class="modal-hint">No FreshFlower brands found yet.</td></tr>`}</tbody>
+    </table>
+  `);
+}
+
+async function saveBrandMatch(ffBrand, rowEl) {
+  const select = rowEl.querySelector(".brand-match-select");
+  const vtBrand = select ? select.value : "";
+  if (!vtBrand) return;
+  await API("brand_matches?on_conflict=ff_brand", {
+    method: "POST",
+    headers: { "Prefer": "resolution=merge-duplicates,return=representation" },
+    body: JSON.stringify({ ff_brand: ffBrand, vt_brand: vtBrand }),
+  });
+  brandMatches = brandMatches.filter(m => (m.ff_brand ?? "").toLowerCase() !== ffBrand.toLowerCase());
+  brandMatches.push({ ff_brand: ffBrand, vt_brand: vtBrand });
+  render();
+  openBrandMatchModal();
+}
+
+async function unmatchBrand(ffBrand) {
+  await API(`brand_matches?ff_brand=eq.${encodeURIComponent(ffBrand)}`, { method: "DELETE" });
+  brandMatches = brandMatches.filter(m => (m.ff_brand ?? "").toLowerCase() !== ffBrand.toLowerCase());
+  render();
+  openBrandMatchModal();
+}
+
+async function openAddSearchGroupModal() {
+  const groups = await fetchAllSearchGroups();
+  const ffBrands = getAllCanonicalFFBrands(groups);
+  const brandOptions = ffBrands.map(b => `<option value="${escapeHtml(b)}">`).join("");
+
   openModal(`
     <h2>Add Search Group <button class="modal-close" data-action="close-modal">&times;</button></h2>
     <div class="modal-field">
@@ -411,7 +477,8 @@ function openAddSearchGroupModal() {
     </div>
     <div class="modal-field">
       <label>Brand</label>
-      <input type="text" id="asg-brand" placeholder="e.g. Fig Farms">
+      <input type="text" id="asg-brand" placeholder="e.g. Fig Farms" list="asg-brand-list" autocomplete="off">
+      <datalist id="asg-brand-list">${brandOptions}</datalist>
     </div>
     <div class="modal-field">
       <label>Weight</label>
@@ -494,7 +561,10 @@ document.getElementById("modal-box").addEventListener("click", (e) => {
   if (!btn) return;
   if (btn.dataset.action === "close-modal") closeModal();
   if (btn.dataset.action === "submit-add-search-group") submitAddSearchGroup();
+  if (btn.dataset.action === "save-brand-match") saveBrandMatch(btn.dataset.ffBrand, btn.closest("tr"));
+  if (btn.dataset.action === "unmatch-brand") unmatchBrand(btn.dataset.ffBrand);
 });
+document.getElementById("brand-match-btn").addEventListener("click", openBrandMatchModal);
 
 // -- Fuzzy strain matching --------------------------------------------------
 function normalizeStrainName(s) {
@@ -826,10 +896,11 @@ function render() {
 
 async function init() {
   try {
-    [allProducts, vtStrains, strainMatches] = await Promise.all([
+    [allProducts, vtStrains, strainMatches, brandMatches] = await Promise.all([
       fetchProducts(),
       fetchVtStrains(),
       fetchStrainMatches(),
+      fetchBrandMatches(),
     ]);
     populateFilterOptions();
     render();
