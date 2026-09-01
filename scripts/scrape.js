@@ -332,9 +332,12 @@ function extractJaneCards() {
       price     = parseFloat(priceWeightMatch[1].replace(/,/g, ""));
       weightStr = `${priceWeightMatch[2]}${priceWeightMatch[3].toLowerCase()}`;
     } else {
-      // Fallback: a flat price with no "/weight" suffix.
+      // Fallback: a flat "$X" price with no "/weight" suffix — seen on
+      // "EACH"-priced items. When discounted, the order is [original, sale]
+      // (opposite of the "/Yg" case above), so take the LAST price found,
+      // not the first, or we'd grab the crossed-out original price.
       const allPrices = [...text.matchAll(/\$([\d,.]+)/g)];
-      price = allPrices.length > 0 ? parseFloat(allPrices[0][1].replace(/,/g, "")) : null;
+      price = allPrices.length > 0 ? parseFloat(allPrices[allPrices.length - 1][1].replace(/,/g, "")) : null;
     }
 
     const thcMatch  = text.match(/THC\s*([\d.]+)%/i);
@@ -360,6 +363,20 @@ function extractJaneCards() {
       /^(select weight|add to bag)$/i,
     ];
     const contentLines = lines.filter(l => !noiseRe.some(re => re.test(l)));
+
+    // "EACH"-priced items (no "/Yg" suffix anywhere on the card) sometimes
+    // carry their real weight only as a "[5g]" bracket tag in the title
+    // itself — extract that as a fallback before it gets stripped off below
+    // for display. Without this, these items had no weight at all, which let
+    // them silently bypass the fixed-weight group filter and show up looking
+    // like duplicates of the correctly-weighted listing.
+    if (!weightStr) {
+      const bracketWeightMatch = (contentLines[0] ?? "").match(/\[\s*([\d.]+)\s*(g|oz|mg)\s*\]/i);
+      if (bracketWeightMatch) {
+        weightStr = `${bracketWeightMatch[1]}${bracketWeightMatch[2].toLowerCase()}`;
+      }
+    }
+
     const strainVal = (contentLines[0] ?? "").replace(/\s*\[\s*[\d.]+\s*(g|oz|mg)\s*\]\s*$/i, "").trim();
     const brandVal  = contentLines[1] ?? "";
     const nameParts = [brandVal, strainVal];
