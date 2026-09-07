@@ -96,11 +96,17 @@ header {
 .modal-field input:focus { border-color: var(--amber); }
 .modal-hint { font-size: 11px; color: var(--dim); margin-top: 5px; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
+.modal-actions:has(.modal-btn-danger) { justify-content: space-between; }
 .modal-btn-primary {
   background: var(--amber); border: none; color: #1a1200; font-weight: 700;
   padding: 9px 18px; border-radius: 8px; cursor: pointer; font-size: 13px;
 }
 .modal-btn-primary:hover { opacity: 0.9; }
+.modal-btn-danger {
+  background: var(--coral-dim); border: 1px solid var(--coral); color: var(--coral);
+  font-weight: 700; padding: 9px 18px; border-radius: 8px; cursor: pointer; font-size: 13px;
+}
+.modal-btn-danger:hover { background: var(--coral); color: #1a0505; }
 .modal-warn { color: var(--coral); font-size: 12px; margin-top: 6px; }
 .sg-list-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .sg-list-table th {
@@ -372,28 +378,118 @@ document.getElementById("modal-overlay").addEventListener("click", (e) => {
 
 async function openSearchGroupsListModal() {
   openModal(`<h2>Search Groups <button class="modal-close" data-action="close-modal">&times;</button></h2><p class="modal-hint">Loading&hellip;</p>`);
-  const res = await API("search_groups?select=title,store,brand,weight_label,url");
+  const res = await API("search_groups?select=id,title,store,brand,weight_label,url,platform,split_by_weight");
   const groups = res.ok ? await res.json() : [];
   groups.sort((a, b) =>
     (a.store || "").localeCompare(b.store || "") ||
     (a.brand || "").localeCompare(b.brand || "") ||
     weightSortKey(a.weight_label) - weightSortKey(b.weight_label)
   );
+  window.__sgListCache = groups; // looked up by id when Edit is clicked
   const rows = groups.map(g => `
     <tr>
       <td>${escapeHtml(g.store || "")}</td>
       <td>${escapeHtml(g.brand || "")}</td>
       <td>${escapeHtml(g.weight_label || "(by weight)")}</td>
       <td><a href="${escapeHtml(g.url)}" target="_blank" rel="noopener" style="color:var(--amber)">Open &#8599;</a></td>
+      <td><button class="thumb" data-action="edit-search-group" data-id="${g.id}">Edit</button></td>
     </tr>
   `).join("");
   openModal(`
     <h2>Search Groups <button class="modal-close" data-action="close-modal">&times;</button></h2>
     <table class="sg-list-table">
-      <thead><tr><th>Store</th><th>Brand</th><th>Weight</th><th></th></tr></thead>
-      <tbody>${rows || `<tr><td colspan="4" class="modal-hint">No search groups found.</td></tr>`}</tbody>
+      <thead><tr><th>Store</th><th>Brand</th><th>Weight</th><th></th><th></th></tr></thead>
+      <tbody>${rows || `<tr><td colspan="5" class="modal-hint">No search groups found.</td></tr>`}</tbody>
     </table>
   `);
+}
+
+function openEditSearchGroupModal(group) {
+  openModal(`
+    <h2>Edit Search Group <button class="modal-close" data-action="close-modal">&times;</button></h2>
+    <div class="modal-field">
+      <label>Store</label>
+      <input type="text" id="esg-store" value="${escapeHtml(group.store || "")}">
+    </div>
+    <div class="modal-field">
+      <label>Brand</label>
+      <input type="text" id="esg-brand" value="${escapeHtml(group.brand || "")}">
+    </div>
+    <div class="modal-field">
+      <label>Weight</label>
+      <input type="text" id="esg-weight" value="${escapeHtml(group.weight_label || "")}" placeholder="e.g. 3.5g &mdash; leave blank to filter by weight">
+      <div class="modal-hint">Leave blank if the URL doesn't filter by weight &mdash; results will be grouped by whatever weight is actually found.</div>
+    </div>
+    <div class="modal-field">
+      <label>URL</label>
+      <input type="text" id="esg-url" value="${escapeHtml(group.url || "")}">
+      <div id="esg-platform-hint" class="modal-hint"></div>
+    </div>
+    <div id="esg-error" class="modal-warn" style="display:none;"></div>
+    <div class="modal-actions">
+      <button class="modal-btn-danger" data-action="delete-search-group" data-id="${group.id}">Delete</button>
+      <button class="modal-btn-primary" data-action="submit-edit-search-group" data-id="${group.id}">Save</button>
+    </div>
+  `);
+  const urlInput = document.getElementById("esg-url");
+  const updateHint = () => {
+    const platform = detectPlatform(urlInput.value.trim());
+    const hint = document.getElementById("esg-platform-hint");
+    if (!urlInput.value.trim()) { hint.textContent = ""; return; }
+    hint.textContent = platform
+      ? `Detected platform: ${platform}`
+      : `Couldn't auto-detect a known platform from this URL — this group may not scrape correctly until that's set manually.`;
+  };
+  urlInput.addEventListener("input", updateHint);
+  updateHint();
+}
+
+async function submitEditSearchGroup(id) {
+  const store  = document.getElementById("esg-store").value.trim();
+  const brand  = document.getElementById("esg-brand").value.trim();
+  const weight = document.getElementById("esg-weight").value.trim();
+  const url    = document.getElementById("esg-url").value.trim();
+  const errorEl = document.getElementById("esg-error");
+  errorEl.style.display = "none";
+
+  if (!store || !brand || !url) {
+    errorEl.textContent = "Store, Brand, and URL are all required.";
+    errorEl.style.display = "block";
+    return;
+  }
+  let parsedUrl;
+  try { parsedUrl = new URL(url); } catch (e) {
+    errorEl.textContent = "That doesn't look like a valid URL.";
+    errorEl.style.display = "block";
+    return;
+  }
+
+  const platform = detectPlatform(url);
+  const title = `${store} - ${brand}${weight ? " - " + weight : ""}`;
+
+  const res = await API(`search_groups?id=eq.${id}`, {
+    method: "PATCH",
+    body: JSON.stringify({
+      title, url: parsedUrl.href, store, brand,
+      weight_label: weight || null,
+      platform: platform || null,
+      split_by_weight: !weight,
+    }),
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    errorEl.textContent = `Couldn't save: ${res.status} ${text}`.slice(0, 200);
+    errorEl.style.display = "block";
+    return;
+  }
+  openSearchGroupsListModal();
+}
+
+async function deleteSearchGroup(id) {
+  if (!confirm("Delete this search group? This won't remove products already scraped under it, but it will stop being scraped going forward.")) return;
+  await API(`search_groups?id=eq.${id}`, { method: "DELETE" });
+  openSearchGroupsListModal();
 }
 
 async function fetchAllSearchGroups() {
@@ -563,6 +659,12 @@ document.getElementById("modal-box").addEventListener("click", (e) => {
   if (btn.dataset.action === "submit-add-search-group") submitAddSearchGroup();
   if (btn.dataset.action === "save-brand-match") saveBrandMatch(btn.dataset.ffBrand, btn.closest("tr"));
   if (btn.dataset.action === "unmatch-brand") unmatchBrand(btn.dataset.ffBrand);
+  if (btn.dataset.action === "edit-search-group") {
+    const group = (window.__sgListCache || []).find(g => String(g.id) === btn.dataset.id);
+    if (group) openEditSearchGroupModal(group);
+  }
+  if (btn.dataset.action === "submit-edit-search-group") submitEditSearchGroup(btn.dataset.id);
+  if (btn.dataset.action === "delete-search-group") deleteSearchGroup(btn.dataset.id);
 });
 document.getElementById("brand-match-btn").addEventListener("click", openBrandMatchModal);
 
