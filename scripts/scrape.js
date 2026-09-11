@@ -1380,6 +1380,9 @@ async function main() {
     console.log(`\n  ${all.length} total variants`);
     const restockedAndNew = await findRestockedAndNew(all);
     console.log(`  🆕 ${restockedAndNew.length} new/restocked`);
+    for (const p of restockedAndNew) {
+      console.log(`  🆕 New/restocked: [${p.brand}] ${p.strain} (${p.weight_label ?? p.weight_grams + "g"})`);
+    }
     const seenIds = new Set(all.map(p => p.jane_product_id));
     for (const p of all) {
       await upsertProduct(p);
