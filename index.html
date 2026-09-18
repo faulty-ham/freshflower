@@ -59,6 +59,13 @@ header {
 }
 .ms-option:hover { background: var(--bg2); }
 .ms-option input { accent-color: var(--amber); cursor: pointer; }
+.ms-date-picker { display: flex; gap: 6px; padding: 6px 8px; align-items: center; }
+.ms-date-input {
+  background: var(--bg2); border: 1px solid var(--border2); color: var(--text);
+  font-family: 'DM Sans', sans-serif; font-size: 12px; padding: 5px 7px; border-radius: 6px;
+  outline: none; flex: 1; min-width: 0;
+}
+.ms-date-input:focus { border-color: var(--amber); }
 .clear-filters {
   background: transparent; border: 1px solid var(--border); color: var(--muted);
   font-size: 12px; padding: 8px 12px; border-radius: 8px; cursor: pointer; font-family: 'DM Mono', monospace;
@@ -754,10 +761,14 @@ document.addEventListener("click", () => {
 
 function buildSingleSelect(containerId, allLabel, options, selectedValue, onSelect) {
   // options: [{ value, label }]. Single choice (radio), not checkboxes —
-  // closes on selection since there's nothing to "add more" of.
+  // closes on selection since there's nothing to "add more" of, EXCEPT the
+  // special "date" option, which stays open to collect a date before closing.
   const container = document.getElementById(containerId);
+  const isDateSelected = selectedValue.startsWith("date:");
   const current = options.find(o => o.value === selectedValue);
-  const summary = current ? current.label : allLabel;
+  const summary = isDateSelected
+    ? `As of ${new Date(selectedValue.slice(5) + "T00:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" })}`
+    : (current ? current.label : allLabel);
 
   container.innerHTML = `
     <button class="ms-btn" type="button">
@@ -771,10 +782,14 @@ function buildSingleSelect(containerId, allLabel, options, selectedValue, onSele
       </label>
       ${options.map(opt => `
         <label class="ms-option">
-          <input type="radio" name="${containerId}-radio" value="${escapeHtml(opt.value)}" ${selectedValue === opt.value ? "checked" : ""}>
+          <input type="radio" name="${containerId}-radio" value="${escapeHtml(opt.value)}" ${(selectedValue === opt.value || (opt.value === "date" && isDateSelected)) ? "checked" : ""}>
           ${escapeHtml(opt.label)}
         </label>
       `).join("")}
+      <div class="ms-date-picker" id="${containerId}-date-picker" style="${isDateSelected ? "" : "display:none;"}">
+        <input type="date" class="ms-date-input" value="${isDateSelected ? escapeHtml(selectedValue.slice(5)) : ""}">
+        <button class="thumb ms-date-apply" type="button">Apply</button>
+      </div>
     </div>
   `;
 
@@ -786,12 +801,30 @@ function buildSingleSelect(containerId, allLabel, options, selectedValue, onSele
     if (!wasOpen) container.classList.add("open");
   });
   container.querySelector(".ms-panel").addEventListener("click", (e) => e.stopPropagation());
+
+  const datePicker = container.querySelector(`#${containerId}-date-picker`);
   container.querySelectorAll('input[type="radio"]').forEach(rb => {
     rb.addEventListener("change", () => {
+      if (rb.value === "date") {
+        // Reveal the date input and wait for Apply instead of closing immediately.
+        datePicker.style.display = "";
+        datePicker.querySelector(".ms-date-input").focus();
+        return;
+      }
+      datePicker.style.display = "none";
       onSelect(rb.value);
       container.classList.remove("open");
     });
   });
+  const applyBtn = container.querySelector(".ms-date-apply");
+  if (applyBtn) {
+    applyBtn.addEventListener("click", () => {
+      const dateVal = container.querySelector(".ms-date-input").value;
+      if (!dateVal) return;
+      onSelect(`date:${dateVal}`);
+      container.classList.remove("open");
+    });
+  }
 }
 
 function populateFilterOptions() {
@@ -807,6 +840,7 @@ function populateFilterOptions() {
     { value: "today", label: "As of Today" },
     { value: "week",  label: "As of This Week" },
     { value: "month", label: "As of This Month" },
+    { value: "date",  label: "As of Date" },
   ], filters.newness, (value) => { filters.newness = value; render(); });
 }
 
@@ -923,6 +957,12 @@ function render() {
   const newnessOk = (p) => {
     if (!filters.newness) return true;
     if (!p.first_seen_at) return false;
+    if (filters.newness.startsWith("date:")) {
+      const chosen = new Date(filters.newness.slice(5) + "T00:00:00");
+      const seen = new Date(p.first_seen_at);
+      const seenDay = new Date(seen.getFullYear(), seen.getMonth(), seen.getDate());
+      return seenDay >= chosen;
+    }
     const age = daysAgo(p.first_seen_at);
     if (filters.newness === "today") return age < 1;
     if (filters.newness === "week")  return age <= 7;
