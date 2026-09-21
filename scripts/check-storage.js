@@ -23,6 +23,14 @@
 import nodemailer from "nodemailer";
 import pg from "pg";
 import fs from "fs";
+import dns from "node:dns";
+
+// GitHub Actions runners have no real IPv6 route, but Supabase's pooler
+// hostname resolves to both an IPv4 and an IPv6 address. Without this,
+// Node sometimes picks the IPv6 one for the raw Postgres connection and
+// fails with ENETUNREACH -- this tells it to prefer IPv4 whenever both
+// are available.
+dns.setDefaultResultOrder("ipv4first");
 
 const STORAGE_LIMIT_MB = Number(process.env.STORAGE_LIMIT_MB || 1024); // Free plan: 1 GB Storage
 const DB_LIMIT_MB      = Number(process.env.DB_LIMIT_MB || 500);       // Free plan: 500 MB Database
