@@ -12,6 +12,12 @@ jobs:
     name: Check Supabase Storage + Database size usage
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # Needed so the "Commit updated usage history" step below can push.
+    # Also requires "Read and write permissions" to be turned on for this
+    # repo under Settings -> Actions -> General -> Workflow permissions --
+    # this line alone isn't enough if that repo setting is still read-only.
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout
