@@ -6,6 +6,11 @@ on:
     # non-issue as the flower scraper's schedule.
     - cron: "0 15 * * *"
   workflow_dispatch:
+    inputs:
+      force_test_email:
+        description: "Send a test email even if no checkpoint was crossed"
+        type: boolean
+        default: false
 
 jobs:
   check-storage:
@@ -50,6 +55,7 @@ jobs:
           SMTP_USER:  ${{ secrets.SMTP_USER }}
           SMTP_PASS:  ${{ secrets.SMTP_PASS }}
           ALERT_TO:   ${{ secrets.ALERT_TO }}
+          FORCE_EMAIL: ${{ github.event.inputs.force_test_email || 'false' }}
         run: node check-storage.js
 
       - name: Commit updated usage history

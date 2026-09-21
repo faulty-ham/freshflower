@@ -150,7 +150,7 @@ function describeTrend(history, limitMB) {
 
 // ---------- Email ----------
 
-async function sendAlert(crossedMetrics, metrics) {
+async function sendAlert(crossedMetrics, metrics, isTest = false) {
   const { SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, ALERT_TO } = process.env;
   if (!SMTP_HOST || !SMTP_USER || !SMTP_PASS || !ALERT_TO) {
     console.log("  (email not configured, skipping alert send)");
@@ -162,8 +162,14 @@ async function sendAlert(crossedMetrics, metrics) {
     auth: { user: SMTP_USER, pass: SMTP_PASS },
   });
   const anyUrgent = crossedMetrics.some(m => m.pct >= 90);
-  const subjectBits = crossedMetrics.map(m => `${m.name} ${m.bucket}%`).join(", ");
-  let html = `<h2>${anyUrgent ? "🚨" : "⚠️"} Supabase usage checkpoint: ${subjectBits}</h2><ul>`;
+  const subjectBits = crossedMetrics.length
+    ? crossedMetrics.map(m => `${m.name} ${m.bucket}%`).join(", ")
+    : "test — no checkpoint actually crossed";
+  const emoji = isTest ? "🧪" : (anyUrgent ? "🚨" : "⚠️");
+  const heading = isTest ? "Supabase usage monitor — test email" : `Supabase usage checkpoint: ${subjectBits}`;
+  let html = `<h2>${emoji} ${heading}</h2>`;
+  if (isTest) html += `<p>This is a manually triggered test send (FORCE_EMAIL=true) — the numbers below are your real current usage, but nothing actually crossed a checkpoint this run.</p>`;
+  html += `<ul>`;
   for (const m of metrics) {
     const crossed = crossedMetrics.find(c => c.name === m.name);
     html += `<li><b>${m.name}</b>: ${m.totalMB.toFixed(1)} MB / ${m.limitMB} MB (${m.pct.toFixed(0)}%)`;
@@ -175,10 +181,10 @@ async function sendAlert(crossedMetrics, metrics) {
   html += `</ul><p>Dashboard: https://supabase.com/dashboard/org/uvvhbquxuzhxccssgnsp/usage</p>`;
   await transporter.sendMail({
     from: `"Supabase Storage Monitor" <${SMTP_USER}>`, to: ALERT_TO,
-    subject: `${anyUrgent ? "🚨" : "⚠️"} Supabase checkpoint: ${subjectBits}`,
+    subject: `${emoji} ${isTest ? "Test email — Supabase usage monitor" : `Supabase checkpoint: ${subjectBits}`}`,
     html,
   });
-  console.log(`  Alert email sent to ${ALERT_TO}`);
+  console.log(`  ${isTest ? "Test email" : "Alert email"} sent to ${ALERT_TO}`);
 }
 
 // ---------- Main ----------
@@ -239,9 +245,14 @@ async function main() {
 
   fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2) + "\n");
 
+  const forceTest = process.env.FORCE_EMAIL === "true";
+
   if (crossed.length) {
     console.log(`  Checkpoint(s) crossed: ${crossed.map(c => `${c.name} -> ${c.bucket}%`).join(", ")}`);
     await sendAlert(crossed, metrics);
+  } else if (forceTest) {
+    console.log("  FORCE_EMAIL=true — sending a test email even though no checkpoint crossed.");
+    await sendAlert([], metrics, true);
   } else {
     console.log("  No new checkpoint crossed, no email sent.");
   }
