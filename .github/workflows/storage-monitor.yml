@@ -1,0 +1,56 @@
+name: Supabase Storage Monitor
+
+on:
+  schedule:
+    # 8:00 AM Pacific daily = 15:00 UTC (PDT); ~1hr drift during PST, same
+    # non-issue as the flower scraper's schedule.
+    - cron: "0 15 * * *"
+  workflow_dispatch:
+
+jobs:
+  check-storage:
+    name: Check Supabase Storage + Database size usage
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install dependencies
+        working-directory: scripts
+        run: npm install
+
+      - name: Check storage + database usage
+        working-directory: scripts
+        env:
+          # Shared FreshFlower/VaporTrails project — reuses the secrets
+          # already configured for the scraper, plus a new one for the DB.
+          SUPABASE_URL:         ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          SUPABASE_DB_URL:      ${{ secrets.SUPABASE_DB_URL }}
+          # ListenLog's separate project — new secrets, see setup notes.
+          LISTENLOG_SUPABASE_URL:         ${{ secrets.LISTENLOG_SUPABASE_URL }}
+          LISTENLOG_SUPABASE_SERVICE_KEY: ${{ secrets.LISTENLOG_SUPABASE_SERVICE_KEY }}
+          LISTENLOG_DB_URL:                ${{ secrets.LISTENLOG_DB_URL }}
+          # Reuses the scraper's existing email alert setup.
+          SMTP_HOST:  ${{ secrets.SMTP_HOST }}
+          SMTP_PORT:  ${{ secrets.SMTP_PORT }}
+          SMTP_USER:  ${{ secrets.SMTP_USER }}
+          SMTP_PASS:  ${{ secrets.SMTP_PASS }}
+          ALERT_TO:   ${{ secrets.ALERT_TO }}
+        run: node check-storage.js
+
+      - name: Commit updated usage history
+        working-directory: scripts
+        run: |
+          git config user.name  "Storage Monitor Bot"
+          git config user.email "storage-monitor-bot@freshflower"
+          git add storage-state.json
+          git diff --cached --quiet || git commit -m "chore: storage usage snapshot $(date -u '+%Y-%m-%d')"
+          git push
