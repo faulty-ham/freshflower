@@ -1047,9 +1047,15 @@ function extractDutchieCards() {
     if (lines.length === 0) continue;
 
     const titleLine = lines[0] || "";
-    const dashIdx = titleLine.lastIndexOf(" - ");
-    const strain = (dashIdx >= 0 ? titleLine.slice(dashIdx + 3).trim() : titleLine.trim())
-      .replace(/\s*\[\s*[\d.]+\s*(g|oz|mg)\s*\]\s*$/i, "").trim();
+    // Usually "Jar - Strain" (space-dash-space), but some listings glue the
+    // weight directly onto the dash with no space before it ("3.5g- Strain").
+    // Match either, using the LAST such separator in case the strain name
+    // itself contains a dash.
+    const dashMatches = [...titleLine.matchAll(/\s*-\s+/g)];
+    const strainSource = dashMatches.length > 0
+      ? titleLine.slice(dashMatches[dashMatches.length - 1].index + dashMatches[dashMatches.length - 1][0].length).trim()
+      : titleLine.trim();
+    const strain = strainSource.replace(/\s*\[\s*[\d.]+\s*(g|oz|mg)\s*\]\s*$/i, "").trim();
 
     const brand = lines[1] || "";
     const lineage = lines.find(l => /^(indica|sativa|hybrid|cbd|cbn)$/i.test(l)) || "";
