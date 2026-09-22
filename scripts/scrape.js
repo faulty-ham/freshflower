@@ -1055,7 +1055,10 @@ function extractDutchieCards() {
     const strainSource = dashMatches.length > 0
       ? titleLine.slice(dashMatches[dashMatches.length - 1].index + dashMatches[dashMatches.length - 1][0].length).trim()
       : titleLine.trim();
-    const strain = strainSource.replace(/\s*\[\s*[\d.]+\s*(g|oz|mg)\s*\]\s*$/i, "").trim();
+    const strain = strainSource
+      .replace(/\s*\[\s*[\d.]+\s*(g|oz|mg)\s*\]\s*$/i, "")  // bracketed weight tag, e.g. "[3.5g]"
+      .replace(/\s+[\d.]+\s*(g|oz|mg)\s*$/i, "")             // plain trailing weight, no brackets/dash
+      .trim();
 
     const brand = lines[1] || "";
     const lineage = lines.find(l => /^(indica|sativa|hybrid|cbd|cbn)$/i.test(l)) || "";
