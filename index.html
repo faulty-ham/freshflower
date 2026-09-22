@@ -379,8 +379,13 @@ function closeModal() {
   document.getElementById("modal-overlay").classList.remove("open");
   document.getElementById("modal-box").innerHTML = "";
 }
+let modalMouseDownOnBackdrop = false;
+document.getElementById("modal-overlay").addEventListener("mousedown", (e) => {
+  modalMouseDownOnBackdrop = (e.target.id === "modal-overlay");
+});
 document.getElementById("modal-overlay").addEventListener("click", (e) => {
-  if (e.target.id === "modal-overlay") closeModal();
+  if (e.target.id === "modal-overlay" && modalMouseDownOnBackdrop) closeModal();
+  modalMouseDownOnBackdrop = false;
 });
 
 async function openSearchGroupsListModal() {
