@@ -72,6 +72,14 @@ header {
 }
 .clear-filters:hover { color: var(--text); border-color: var(--border2); }
 
+.search-input {
+  background: var(--bg3); border: 1px solid var(--border2); color: var(--text);
+  font-family: 'DM Sans', sans-serif; font-size: 13px; padding: 8px 12px; border-radius: 8px;
+  outline: none; min-width: 180px;
+}
+.search-input:focus { border-color: var(--amber); }
+.search-input::placeholder { color: var(--dim); }
+
 /* -- Modals -- */
 .modal-overlay {
   display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6);
@@ -208,9 +216,11 @@ main { max-width: 900px; margin: 0 auto; padding: 20px; }
     <div class="stat-pill"><strong id="stat-count">-</strong> variants &middot; <strong id="stat-groups">-</strong> search groups</div>
   </div>
   <div class="filters">
+    <input type="text" class="search-input" id="strain-search" placeholder="Search strain name&hellip;">
     <div class="ms" id="ms-store"></div>
     <div class="ms" id="ms-brand"></div>
     <div class="ms" id="ms-weight"></div>
+    <div class="ms" id="ms-rating"></div>
     <div class="ms" id="ms-new"></div>
     <button class="clear-filters" id="clear-filters-btn">Clear filters</button>
     <button class="clear-filters" id="search-groups-list-btn">Search Groups List</button>
@@ -309,7 +319,7 @@ let allProducts = [];
 let vtStrains = [];       // [{ id, brand, strain, rating }]
 let strainMatches = [];   // [{ ff_brand, ff_strain, vt_strain_id, status }]
 let brandMatches = [];    // [{ ff_brand, vt_brand }]
-let filters = { stores: new Set(), brands: new Set(), weights: new Set(), newness: "" };
+let filters = { stores: new Set(), brands: new Set(), weights: new Set(), ratings: new Set(), newness: "", search: "" };
 
 async function fetchProducts() {
   // current_inventory view already joins in search_group title/store/brand/weight
@@ -837,23 +847,35 @@ function buildSingleSelect(containerId, allLabel, options, selectedValue, onSele
       container.classList.remove("open");
     });
   });
+  const dateInput = datePicker.querySelector(".ms-date-input");
+  const daysInput = daysPicker.querySelector(".ms-days-input");
+
+  const applyDate = () => {
+    const dateVal = dateInput.value;
+    if (!dateVal) return;
+    onSelect(`date:${dateVal}`);
+    container.classList.remove("open");
+  };
+  const applyDays = () => {
+    const daysVal = daysInput.value;
+    const n = parseInt(daysVal, 10);
+    if (!n || n < 1) return;
+    onSelect(`days:${n}`);
+    container.classList.remove("open");
+  };
   const dateApplyBtn = container.querySelector(".ms-date-apply");
-  if (dateApplyBtn) {
-    dateApplyBtn.addEventListener("click", () => {
-      const dateVal = container.querySelector(".ms-date-input").value;
-      if (!dateVal) return;
-      onSelect(`date:${dateVal}`);
-      container.classList.remove("open");
+  if (dateApplyBtn) dateApplyBtn.addEventListener("click", applyDate);
+  const daysApplyBtn = container.querySelector(".ms-days-apply");
+  if (daysApplyBtn) daysApplyBtn.addEventListener("click", applyDays);
+
+  if (dateInput) {
+    dateInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") { e.preventDefault(); applyDate(); }
     });
   }
-  const daysApplyBtn = container.querySelector(".ms-days-apply");
-  if (daysApplyBtn) {
-    daysApplyBtn.addEventListener("click", () => {
-      const daysVal = container.querySelector(".ms-days-input").value;
-      const n = parseInt(daysVal, 10);
-      if (!n || n < 1) return;
-      onSelect(`days:${n}`);
-      container.classList.remove("open");
+  if (daysInput) {
+    daysInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") { e.preventDefault(); applyDays(); }
     });
   }
 }
@@ -867,6 +889,7 @@ function populateFilterOptions() {
   buildMultiSelect("ms-store", "All stores", stores, filters.stores);
   buildMultiSelect("ms-brand", "All brands", brands, filters.brands);
   buildMultiSelect("ms-weight", "All weights", weights, filters.weights);
+  buildMultiSelect("ms-rating", "All ratings", ["Fire", "Fresh", "Trash", "Unrated"], filters.ratings);
   buildSingleSelect("ms-new", "New", [
     { value: "today", label: "As of Today" },
     { value: "week",  label: "As of This Week" },
@@ -880,6 +903,22 @@ function findStrainMatch(ffBrand, ffStrain) {
   const b = ffBrand.toLowerCase(), s = ffStrain.toLowerCase();
   return strainMatches.find(m => m.ff_brand.toLowerCase() === b && m.ff_strain.toLowerCase() === s);
 }
+
+// Returns "Great" | "OK" | "NG" | "unrated" — used by both the rating badge
+// and the Ratings filter, so they always agree on what counts as unrated.
+function getRatingStatus(p) {
+  const canonical = canonicalBrand(p.search_group_brand);
+  const vtBrand = vtBrandFor(canonical);
+  if (!vtBrand) return "unrated";
+
+  const existing = findStrainMatch(p.brand, p.strain);
+  if (!existing || existing.status === "no_match") return "unrated";
+
+  const vt = vtStrains.find(v => v.id === existing.vt_strain_id);
+  if (!vt || !vt.rating || !RATING_EMOJI[vt.rating]) return "unrated";
+  return vt.rating;
+}
+const RATING_FILTER_LABELS = { Great: "Fire", OK: "Fresh", NG: "Trash", unrated: "Unrated" };
 
 function renderRatingWidget(p) {
   const canonical = canonicalBrand(p.search_group_brand);
@@ -1006,11 +1045,22 @@ function render() {
     return true;
   };
 
+  const ratingOk = (p) => {
+    if (filters.ratings.size === 0) return true;
+    const label = RATING_FILTER_LABELS[getRatingStatus(p)] || "Unrated";
+    return filters.ratings.has(label);
+  };
+
+  const searchTerm = filters.search.trim().toLowerCase();
+  const searchOk = (p) => !searchTerm || (p.strain || "").toLowerCase().includes(searchTerm);
+
   const filtered = allProducts.filter(p =>
     (filters.stores.size  === 0 || filters.stores.has(p.search_group_store)) &&
     (filters.brands.size  === 0 || filters.brands.has(canonicalBrand(p.search_group_brand))) &&
     (filters.weights.size === 0 || filters.weights.has(p.search_group_weight)) &&
-    newnessOk(p)
+    newnessOk(p) &&
+    ratingOk(p) &&
+    searchOk(p)
   );
 
   document.getElementById("stat-count").textContent = filtered.length;
@@ -1089,8 +1139,14 @@ async function init() {
 }
 
 document.getElementById("clear-filters-btn").addEventListener("click", () => {
-  filters = { stores: new Set(), brands: new Set(), weights: new Set(), newness: "" };
+  filters = { stores: new Set(), brands: new Set(), weights: new Set(), ratings: new Set(), newness: "", search: "" };
+  document.getElementById("strain-search").value = "";
   populateFilterOptions();
+  render();
+});
+
+document.getElementById("strain-search").addEventListener("input", (e) => {
+  filters.search = e.target.value;
   render();
 });
 
