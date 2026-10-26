@@ -1199,9 +1199,24 @@ async function scrapeDutchieGroup(browser, group) {
 
   await context.close();
 
-  // Prefer network-captured GraphQL data when available — more reliable and
-  // structured than anything parsed out of rendered DOM text.
+  // The network branch below maps fields like p.brand?.name / p.name /
+  // p.strainType / v.option / v.priceRec based on a GUESS at Dutchie's
+  // GraphQL shape — it was never checked against a real captured payload.
+  // Dump the raw shape of the first captured item so that guess can
+  // eventually be verified or corrected from real data instead of more
+  // guessing.
   if (rawFromNetwork.length > 0) {
+    console.log(`  [Dutchie] raw network item #0 (debug, unverified shape):`,
+      JSON.stringify(rawFromNetwork[0]).slice(0, 1000));
+  }
+
+  // The DOM-extracted `products` array above is the verified-good source —
+  // every field (brand/strain/weight/price/thc) has matched real scrapes in
+  // debug logs. Use it as primary. Only fall back to the network-shaped
+  // guess if DOM extraction genuinely found nothing, since partially-wrong
+  // data (blank strain/brand showing as "Unknown" on the dashboard) is worse
+  // than no data at all.
+  if (products.length === 0 && rawFromNetwork.length > 0) {
     const seen = new Set();
     const deduped = rawFromNetwork.filter(p => {
       const id = String(p.id ?? "");
@@ -1209,7 +1224,7 @@ async function scrapeDutchieGroup(browser, group) {
       seen.add(id); return true;
     });
     const matched = deduped.filter(p => brandMatches(p.brand?.name));
-    console.log(`  [Dutchie] ${matched.length} of ${deduped.length} network products match brand "${group.brand}"`);
+    console.log(`  [Dutchie] DOM found 0 — falling back to ${matched.length} of ${deduped.length} network products matching brand "${group.brand}" (unverified field mapping)`);
 
     return matched.flatMap(p =>
       (p.variants ?? [{ id: p.id, priceRec: null, option: null }]).map(v => {
