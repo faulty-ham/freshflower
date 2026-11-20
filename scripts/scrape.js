@@ -1245,25 +1245,21 @@ async function scrapeDutchieGroup(browser, group) {
       if (!id || seen.has(id)) return false;
       seen.add(id); return true;
     });
-    const matched = deduped.filter(p => brandMatches(p.brand?.name));
-    console.log(`  [Dutchie] DOM found 0 — falling back to ${matched.length} of ${deduped.length} network products matching brand "${group.brand}" (unverified field mapping)`);
-
-    return matched.flatMap(p =>
-      (p.variants ?? [{ id: p.id, priceRec: null, option: null }]).map(v => {
-        const weightG = parseWeightGrams(String(v.option ?? ""));
-        return {
-          source: "harborside-sj",
-          jane_product_id: `dutchie-${p.id}-${v.id ?? v.option ?? "default"}`,
-          product_base_id: `dutchie-${p.id}`,
-          brand: p.brand?.name ?? group.brand, strain: p.name ?? "", lineage: p.strainType ?? "",
-          weight_grams: weightG, weight_label: v.option ?? group.weight, price: v.priceRec ?? null,
-          thc_pct: null, cbd_pct: null,
-          product_url: `https://shopharborside.com/stores/san-jose-10th-street/products/products/${p.id}`,
-          image_url: p.image ?? null,
-          search_group_title: group.title,
-        };
-      })
-    );
+    const matched = deduped.filter(p => brandMatches(p.brand?.name ?? p.brandName));
+    console.log(`  [Dutchie] DOM found 0; ${matched.length} of ${deduped.length} network products match brand "${group.brand}"`);
+    // Real payloads use capitalized keys (Image, CBD, DispensaryID), so the
+    // old lowercase guess (p.name / p.variants) produced blank strains. Until
+    // the name/price/weight fields are confirmed from a real dump, ship
+    // nothing rather than blank-strain rows; log what we need to map them.
+    for (const p of matched.slice(0, 2)) {
+      console.log(`  [Dutchie] unmapped network product keys: ${JSON.stringify(Object.keys(p))}`);
+      const pick = {};
+      for (const k of ["Name", "name", "Options", "Prices", "recPrices", "POSMetaData", "THCContent", "type", "strainType", "Status"]) {
+        if (p[k] !== undefined) pick[k] = p[k];
+      }
+      console.log(`  [Dutchie] unmapped network product fields: ${JSON.stringify(pick).slice(0, 800)}`);
+    }
+    return [];
   }
 
   return products.map(p => {
