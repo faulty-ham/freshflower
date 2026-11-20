@@ -1162,6 +1162,28 @@ async function scrapeDutchieGroup(browser, group) {
   const allExtracted = Array.from(collected.values());
   console.log(`  [Dutchie] ${allExtracted.length} product cards found in DOM across ${iterations} scroll steps`);
 
+  // Zero cards usually means the page never rendered a menu (age gate, bot
+  // block, layout change) rather than "brand has no stock". Dump enough to
+  // tell which, since the DOM/network parsers can't be debugged blind.
+  if (allExtracted.length === 0) {
+    try {
+      const diag = await target.evaluate(() => ({
+        title: document.title,
+        url: location.href,
+        anchors: document.querySelectorAll("a").length,
+        productLinks: document.querySelectorAll('a[href*="/product/"]').length,
+        buttons: [...document.querySelectorAll("button")].slice(0, 12).map(b => (b.innerText || "").trim().slice(0, 40)),
+        body: (document.body?.innerText || "").replace(/\s+/g, " ").slice(0, 600),
+      }));
+      console.log(`  [Dutchie] ZERO-CARD DIAG title=${JSON.stringify(diag.title)} url=${diag.url}`);
+      console.log(`  [Dutchie] ZERO-CARD DIAG anchors=${diag.anchors} productLinks=${diag.productLinks} frames=${page.frames().length}`);
+      console.log(`  [Dutchie] ZERO-CARD DIAG buttons=${JSON.stringify(diag.buttons)}`);
+      console.log(`  [Dutchie] ZERO-CARD DIAG body=${JSON.stringify(diag.body)}`);
+    } catch (e) {
+      console.log(`  [Dutchie] ZERO-CARD DIAG failed: ${e.message}`);
+    }
+  }
+
   let products = allExtracted.filter(p => brandMatches(p.brand));
   const rejectedBrands = [...new Set(
     allExtracted.filter(p => !brandMatches(p.brand)).map(p => p.brand || "(empty)")
